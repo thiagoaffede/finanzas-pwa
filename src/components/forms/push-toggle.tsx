@@ -20,7 +20,7 @@ function keyToBytes(base64: string): Uint8Array<ArrayBuffer> {
 export function PushToggle({ canSave }: { canSave: boolean }) {
   const [status, setStatus] = useState<Status>("cargando");
   const [publicKey, setPublicKey] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const isIOS = typeof navigator !== "undefined" && /iphone|ipad/i.test(navigator.userAgent);
 
@@ -51,16 +51,36 @@ export function PushToggle({ canSave }: { canSave: boolean }) {
       const r = await send("/api/push", "POST", sub.toJSON());
       if (!r.ok) {
         await sub.unsubscribe();
-        setMsg(r.error);
+        setMsg({ text: r.error, ok: false });
         return;
       }
       setStatus("activo");
-      await send("/api/push/test", "POST");
+      await test();
     } catch {
-      setMsg("No se pudo activar en este navegador.");
+      setMsg({ text: "No se pudo activar en este navegador.", ok: false });
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Manda un aviso de prueba y muestra qué pasó (antes no se veía nada si fallaba). */
+  async function test() {
+    setBusy(true);
+    setMsg(null);
+    const r = await send<{ sent: number; removed: number; failed: number; errors?: string[] }>("/api/push/test", "POST");
+    setBusy(false);
+    if (!r.ok) return setMsg({ text: r.error, ok: false });
+    const { sent, removed, errors = [] } = r.data;
+    if (sent > 0)
+      return setMsg({
+        text: `Enviado a ${sent} dispositivo${sent === 1 ? "" : "s"}. Si no te llega en unos segundos, revisá ${isIOS ? "Ajustes › Notificaciones › Finanzas" : "los permisos de notificaciones"}.`,
+        ok: true,
+      });
+    if (removed > 0) {
+      setStatus("apagado");
+      return setMsg({ text: "Tu suscripción había vencido. Tocá “Activar en este dispositivo” de nuevo.", ok: false });
+    }
+    setMsg({ text: errors.length ? `No se pudo enviar: ${errors[0]}` : "No hay dispositivos activados.", ok: false });
   }
 
   async function disable() {
@@ -83,7 +103,7 @@ export function PushToggle({ canSave }: { canSave: boolean }) {
     "sin-claves": "Los avisos no están configurados en el servidor (faltan las claves VAPID).",
     bloqueado: "Bloqueaste las notificaciones para esta app. Habilitalas desde los ajustes del navegador.",
     apagado: "Te avisamos 3 días antes, el día anterior y el mismo día de cada vencimiento, a las 8 de la mañana.",
-    activo: "Activados en este dispositivo. Te mandamos uno de prueba.",
+    activo: "Activados en este dispositivo. Tocá “Probar” para recibir uno de prueba.",
   };
 
   return (
@@ -96,14 +116,14 @@ export function PushToggle({ canSave }: { canSave: boolean }) {
         {status === "activo" ? <Bell className="h-4 w-4 text-good" /> : <BellOff className="h-4 w-4 text-ink-3" />}
       </CardHeader>
       {(status === "apagado" || status === "activo") && canSave && (
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {status === "apagado" ? (
             <Button disabled={busy} onClick={enable}>
               Activar en este dispositivo
             </Button>
           ) : (
             <>
-              <Button variant="outline" disabled={busy} onClick={() => send("/api/push/test", "POST")}>
+              <Button variant="outline" disabled={busy} onClick={test}>
                 Probar
               </Button>
               <Button variant="ghost" disabled={busy} onClick={disable}>
@@ -111,7 +131,7 @@ export function PushToggle({ canSave }: { canSave: boolean }) {
               </Button>
             </>
           )}
-          {msg && <span className="text-xs text-bad">{msg}</span>}
+          {msg && <span className={`text-xs ${msg.ok ? "text-good" : "text-bad"}`}>{msg.text}</span>}
         </div>
       )}
     </Card>

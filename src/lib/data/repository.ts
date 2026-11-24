@@ -19,6 +19,8 @@ export interface AppSettings {
   netIncomeCents: number | null;
   openingBalanceCents: number;
   minBalanceCents: number;
+  /** Día hábil del mes en que cobrás el sueldo (3 = tercer día hábil). */
+  paydayBusinessDay: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   netIncomeCents: null,
   openingBalanceCents: 0,
   minBalanceCents: 0,
+  paydayBusinessDay: 3,
 };
 
 export async function getSettings(db: Db): Promise<AppSettings> {

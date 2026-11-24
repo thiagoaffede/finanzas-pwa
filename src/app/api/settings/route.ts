@@ -10,6 +10,7 @@ const patch = z.object({
   netIncomeCents: z.number().int().min(0).nullable().optional(),
   openingBalanceCents: z.number().int().optional(),
   minBalanceCents: z.number().int().min(0).optional(),
+  paydayBusinessDay: z.number().int().min(1).max(15).optional(),
 });
 
 export async function GET() {

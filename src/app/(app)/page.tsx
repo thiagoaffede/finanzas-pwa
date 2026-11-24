@@ -70,6 +70,19 @@ export default async function DashboardPage() {
             <Stat label="A objetivos" value={formatARS(s.goalContributionsCents)} />
             <Stat label="Te queda" value={formatARS(s.remainingCents)} tone={s.remainingCents < 0 ? "bad" : undefined} />
           </div>
+          {d.nextIncome && (
+            <p className="mt-4 rounded-xl bg-surface-muted px-3 py-2 text-xs text-ink-2">
+              Próximo cobro: <span className="num font-medium text-ink">{formatARS(d.nextIncome.salary.amountCents)}</span> el{" "}
+              {dateLabel(d.nextIncome.salary.date)}
+              {d.nextIncome.prorated && ` (sueldo de ${monthLabel(d.nextIncome.salary.accrualMonth)}, ${d.nextIncome.salary.days} días trabajados)`}
+              {d.nextIncome.sac && (
+                <>
+                  {" "}· Aguinaldo estimado <span className="num font-medium text-ink">{formatARS(d.nextIncome.sac.amountCents)}</span> hasta el {dateLabel(d.nextIncome.sac.date)}
+                  {d.nextIncome.sac.daysWorked < d.nextIncome.sac.semesterDays && ` (${d.nextIncome.sac.daysWorked} de ${d.nextIncome.sac.semesterDays} días del semestre)`}
+                </>
+              )}
+            </p>
+          )}
         </Card>
 
         {/* Alertas */}

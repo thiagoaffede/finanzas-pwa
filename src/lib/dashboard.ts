@@ -1,6 +1,7 @@
 import type { BillProvider } from "@/types/finance";
 import {
   addMonths,
+  calculateSafeFromBalance,
   calculateSafeToSpend,
   daysInMonth,
   detectBillAnomaly,
@@ -13,6 +14,7 @@ import {
   sacPayment,
   salaryPayment,
   toISODate,
+  lastDayOfMonth,
   type CashflowInput,
   type DueItem,
 } from "@/lib/finance";
@@ -165,17 +167,34 @@ export function buildDashboard(ctx: FinanceContext) {
     .filter(isVariableSpend)
     .reduce((s, t) => s + t.amountCents - t.owedCents, 0);
 
-  // Lo que cobrás este mes (el primer sueldo puede ser proporcional). Si todavía no hay cobro
-  // (recién entraste), se usa el sueldo completo como referencia de presupuesto.
+  const obligations = items.map((d) => ({ label: d.label, amountCents: d.amountCents, dueDate: d.dueDate, paid: d.paid }));
   const paidThisMonth = salaryPayment(ctx.month, payrollInput(ctx)).amountCents;
-  const safe = calculateSafeToSpend({
-    today: ctx.today,
-    netIncomeCents: paidThisMonth > 0 ? paidThisMonth : ctx.netIncomeCents,
-    obligations: items.map((d) => ({ label: d.label, amountCents: d.amountCents, dueDate: d.dueDate, paid: d.paid })),
-    goalContributionsCents,
-    spentSoFarCents,
-    bufferCents: ctx.settings.bufferCents,
-  });
+  const cashAccounts = ctx.accounts.filter((a) => a.kind !== "tarjeta");
+  const next = ctx.netIncomeCents > 0 ? nextIncome(ctx) : null;
+
+  // Base del cálculo:
+  // - "saldo": si cargaste cuentas, la plata que tenés hoy repartida hasta el próximo cobro.
+  // - "sin-saldo": todavía no cobraste este mes y no hay cuentas: no hay con qué calcular.
+  // - "sueldo": el sueldo del mes menos vencimientos, objetivos y lo ya gastado.
+  const basis: "saldo" | "sin-saldo" | "sueldo" = cashAccounts.length ? "saldo" : !ctx.demo && paidThisMonth === 0 ? "sin-saldo" : "sueldo";
+  const safe =
+    basis === "sueldo"
+      ? calculateSafeToSpend({
+          today: ctx.today,
+          netIncomeCents: paidThisMonth > 0 ? paidThisMonth : ctx.netIncomeCents,
+          obligations,
+          goalContributionsCents,
+          spentSoFarCents,
+          bufferCents: ctx.settings.bufferCents,
+        })
+      : calculateSafeFromBalance({
+          today: ctx.today,
+          balanceCents: basis === "saldo" ? availableBalance(ctx).cents : 0,
+          untilDate: next?.salary.date ?? lastDayOfMonth(ctx.month),
+          obligations,
+          goalContributionsCents: basis === "saldo" ? goalContributionsCents : 0,
+          bufferCents: ctx.settings.bufferCents,
+        });
 
   return {
     today: ctx.today,
@@ -189,6 +208,7 @@ export function buildDashboard(ctx: FinanceContext) {
     goals: ctx.goals,
     previousMonth: addMonths(ctx.month, -1),
     netIncomeSource: ctx.netIncomeSource,
-    nextIncome: ctx.netIncomeCents > 0 ? nextIncome(ctx) : null,
+    nextIncome: next,
+    basis,
   };
 }

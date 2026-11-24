@@ -39,3 +39,27 @@ describe("sueldo y aguinaldo en el flujo de caja", () => {
     expect(buildDashboard(ctxFor("2026-12-10")).safe.netIncomeCents).toBe(433_333_33);
   });
 });
+
+describe("cuánto puedo gastar sin cobro este mes", () => {
+  const base = () => {
+    const c = ctxFor("2026-11-24");
+    return { ...c, demo: false, bills: [], installments: [], goals: [], rent: null, transactions: [], settings: { ...c.settings, bufferCents: 0 } };
+  };
+
+  it("sin cuentas cargadas no inventa un monto", () => {
+    const d = buildDashboard(base());
+    expect(d.basis).toBe("sin-saldo");
+    expect(d.safe.perDayCents).toBe(0);
+  });
+
+  it("con cuentas reparte la plata hasta el cobro del 3/12", () => {
+    const account = { id: "a", name: "Banco", kind: "banco" as const, openingBalanceCents: 0, balanceSetAt: "", balanceCents: 300_000_00 };
+    const card = { ...account, id: "t", kind: "tarjeta" as const, balanceCents: -50_000_00 };
+    const ctx = { ...base(), accounts: [account, card], bills: [{ id: "b", provider: "EDES" as const, period: "2026-11", dueDate: "2026-11-28", amountCents: 50_000_00, paid: false }] };
+    const d = buildDashboard(ctx);
+    expect(d.basis).toBe("saldo");
+    expect(d.safe.daysLeft).toBe(10); // 24/11 al 3/12 inclusive
+    expect(d.safe.remainingCents).toBe(250_000_00);
+    expect(d.safe.perDayCents).toBe(25_000_00);
+  });
+});

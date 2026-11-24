@@ -97,3 +97,46 @@ export function calculateSafeToSpend(input: SafeToSpendInput): SafeToSpendResult
     status,
   };
 }
+
+export interface SafeFromBalanceInput {
+  today: ISODate;
+  /** Plata disponible hoy (suma de cuentas). */
+  balanceCents: Cents;
+  /** Día del próximo cobro: hasta ahí tiene que alcanzar la plata (ese día todavía cuenta). */
+  untilDate: ISODate;
+  /** Vencimientos impagos; cuentan los que vencen hasta el próximo cobro. */
+  obligations: Obligation[];
+  goalContributionsCents: Cents;
+  bufferCents?: Cents;
+}
+
+/**
+ * "Cuánto puedo gastar" a partir de la plata que tenés hoy (cuentas), repartida hasta el próximo cobro.
+ * Lo ya gastado ya salió del saldo, así que no se vuelve a restar.
+ */
+export function calculateSafeFromBalance(input: SafeFromBalanceInput): SafeToSpendResult {
+  const month = monthOf(input.today);
+  const pending = input.obligations.filter((o) => !o.paid && o.dueDate <= input.untilDate);
+  const pendingObligationsCents = pending.reduce((s, o) => s + o.amountCents, 0);
+  const bufferCents = input.bufferCents ?? 0;
+  const availableMonthCents = input.balanceCents - pendingObligationsCents - input.goalContributionsCents - bufferCents;
+  const remainingCents = availableMonthCents;
+  const daysLeft = Math.max(1, diffDays(input.today, input.untilDate) + 1);
+  const perDayCents = remainingCents > 0 ? Math.floor(remainingCents / daysLeft) : 0;
+  const perWeekCents = remainingCents > 0 ? Math.min(remainingCents, perDayCents * 7) : 0;
+  return {
+    month,
+    netIncomeCents: input.balanceCents,
+    obligationsCents: pendingObligationsCents,
+    pendingObligationsCents,
+    goalContributionsCents: input.goalContributionsCents,
+    bufferCents,
+    availableMonthCents,
+    remainingCents,
+    daysLeft,
+    perDayCents,
+    perWeekCents,
+    expectedSpentByTodayCents: 0,
+    status: remainingCents < 0 ? "over" : remainingCents < input.balanceCents * 0.1 ? "tight" : "ok",
+  };
+}

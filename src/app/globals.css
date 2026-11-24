@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+/* Paleta clara minimalista. Los colores de gráficos siguen una paleta validada para daltonismo. */
+@theme {
+  --color-background: #f7f7f5;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1f1ee;
+  --color-border: #e6e5e1;
+  --color-ink: #141413;
+  --color-ink-2: #52514e;
+  --color-ink-3: #8a8984;
+  --color-accent: #2a78d6;
+  --color-accent-soft: #e8f1fc;
+  --color-good: #0f7b3e;
+  --color-good-soft: #e6f4ec;
+  --color-warn: #a35f00;
+  --color-warn-soft: #fdf2dc;
+  --color-bad: #c22f2e;
+  --color-bad-soft: #fbe9e8;
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
+  --color-series-4: #eda100;
+  --color-series-5: #6250d6;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius-card: 1rem;
+}
+
+html {
+  background: var(--color-background);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--color-background);
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}

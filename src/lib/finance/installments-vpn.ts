@@ -91,12 +91,13 @@ export function compareCashVsInstallments(input: CashVsInstallmentsInput): CashV
 
   const irr = impliedRate(cashPriceCents, installments, offset);
 
+  const pct = (x: number) => (x * 100).toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const summary =
     best === "igual"
       ? "Da prácticamente lo mismo: elegí según tu liquidez."
       : best === "cuotas"
-        ? `Conviene en cuotas: en pesos de hoy pagás ${(savingPct * 100).toFixed(1)} % menos que de contado.`
-        : `Conviene de contado: las cuotas te cuestan ${(-savingPct * 100).toFixed(1)} % más en pesos de hoy.`;
+        ? `Conviene en cuotas: en pesos de hoy pagás ${pct(savingPct)} % menos que de contado.`
+        : `Conviene de contado: las cuotas te cuestan ${pct(-savingPct)} % más en pesos de hoy.`;
 
   return {
     cashPriceCents,

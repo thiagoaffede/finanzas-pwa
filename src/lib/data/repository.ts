@@ -325,6 +325,15 @@ export async function createGoal(db: Db, g: { name: string; targetCents: number;
   return row;
 }
 
+export async function updateGoal(
+  db: Db,
+  id: string,
+  patch: { name?: string; targetCents?: number; targetDate?: ISODate | null; monthlyContributionCents?: number | null; archived?: boolean },
+) {
+  const [row] = await db.update(s.goals).set({ ...patch, updatedAt: new Date() }).where(eq(s.goals.id, id)).returning();
+  return row ?? null;
+}
+
 export async function addGoalContribution(db: Db, goalId: string, date: ISODate, amountCents: number) {
   const [row] = await db.insert(s.goalContributions).values({ goalId, date, amountCents }).returning();
   return row;

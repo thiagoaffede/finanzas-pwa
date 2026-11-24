@@ -4,7 +4,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ScenarioSimulator } from "@/components/forms/scenario-simulator";
-import { GoalContribution, NewGoalForm } from "@/components/forms/goals-manager";
+import { GoalContribution, GoalEditor, NewGoalForm } from "@/components/forms/goals-manager";
 import { monthLabel, PROVIDER_NAME } from "@/lib/labels";
 import { DemoNotice } from "@/components/dashboard/demo-notice";
 import { buildCashflowInput, buildDashboard } from "@/lib/dashboard";
@@ -76,7 +76,10 @@ export default async function PlanificacionPage() {
                     {formatARS(g.savedCents)} de {formatARS(g.targetCents)}
                   </CardDescription>
                 </div>
-                <Badge tone="accent">{formatPct(plan.progress, 0)}</Badge>
+                <div className="flex items-center gap-1">
+                  <Badge tone="accent">{formatPct(plan.progress, 0)}</Badge>
+                  <GoalEditor goal={g} canSave={canSave} />
+                </div>
               </CardHeader>
               <Progress value={plan.progress} />
               <div className="mt-4 grid grid-cols-3 gap-3 text-sm">

@@ -1,4 +1,4 @@
-import { LayoutDashboard, ListOrdered, Briefcase, Target, Calculator, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, ListOrdered, Briefcase, Target, Calculator, Settings, type LucideIcon } from "lucide-react";
 
 export const NAV_ITEMS: { href: string; label: string; short: string; icon: LucideIcon }[] = [
   { href: "/", label: "Tablero", short: "Inicio", icon: LayoutDashboard },
@@ -7,3 +7,6 @@ export const NAV_ITEMS: { href: string; label: string; short: string; icon: Luci
   { href: "/planificacion", label: "Objetivos y planificación", short: "Planes", icon: Target },
   { href: "/calculadoras", label: "Calculadoras", short: "Calcular", icon: Calculator },
 ];
+
+/** Solo en la barra lateral (en el celu se llega desde el ícono del encabezado). */
+export const SETTINGS_ITEM = { href: "/configuracion", label: "Configuración", short: "Ajustes", icon: Settings };

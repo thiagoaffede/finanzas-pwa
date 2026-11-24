@@ -1,16 +1,19 @@
 # Esquemas de extracción (boletas y recibos)
 
-La lectura automática de PDFs y fotos es la **Fase 3**. El flujo previsto:
+Cómo funciona la lectura automática de PDFs y fotos:
 
-1. La PWA sube el archivo a `POST /api/documents/parse` (multipart: `file`, `kind`).
-2. El server guarda el archivo (`documents`) y lo manda a un LLM con visión pidiendo **solo JSON**
-   que cumpla el schema de abajo (validado con Zod en `src/lib/schemas`).
+1. La PWA sube el archivo a `POST /api/documents/parse` (multipart: `file`, `kind` = `bill` | `payslip`).
+   Formatos: PDF, JPG, PNG, GIF y WEBP.
+2. El server lo manda a Claude (`src/lib/extraction/claude-extractor.ts`, modelo en `EXTRACTION_MODEL`)
+   con salida estructurada: el modelo solo puede devolver JSON que cumpla el schema de abajo.
 3. `bill-parser.ts` / `payslip-parser.ts` normalizan montos (`"1.234,56"` → centavos), fechas
    (`dd/mm/aaaa` → ISO), períodos (`"Noviembre 2026"` → `2026-11`) y detectan el proveedor.
-4. La PWA muestra una **pantalla de confirmación** con los datos y advertencias; recién ahí se guarda.
+4. La PWA muestra una **pantalla de confirmación** editable con advertencias; recién al confirmar
+   se guarda la boleta (con el JSON extraído en `raw_extracted_json`) o el recibo.
 
-Hoy ya funciona el paso 3: `POST /api/documents/parse` con `application/json`
-`{ "kind": "bill" | "payslip", "extraction": { … } }` devuelve el resultado normalizado.
+El archivo original no se guarda: solo los datos confirmados. Sin `ANTHROPIC_API_KEY` la ruta
+responde 501 y se puede cargar todo a mano. También acepta `application/json`
+`{ "kind": "bill" | "payslip", "extraction": { … } }` para normalizar una extracción hecha afuera.
 
 ## Reglas para el modelo
 

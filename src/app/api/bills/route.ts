@@ -1,9 +1,10 @@
-import { asc } from "drizzle-orm";
-import { getDb, hasDatabase, schema } from "@/lib/db";
 import { json, noDatabase, parseBody } from "@/lib/api";
+import { getDb, hasDatabase } from "@/lib/db";
 import { billInput } from "@/lib/schemas";
+import { createBill, listBills } from "@/lib/data/repository";
 import { classifyDue, todayAR } from "@/lib/finance";
 import { demoBills } from "@/lib/demo-data";
+import { z } from "zod";
 
 export const dynamic = "force-dynamic";
 
@@ -13,14 +14,15 @@ export async function GET() {
   if (!hasDatabase()) {
     return json({ demo: true, items: demoBills(today).map((b) => ({ ...b, bucket: classifyDue(b.dueDate, today, b.paid) })) });
   }
-  const rows = await getDb().select().from(schema.bills).orderBy(asc(schema.bills.dueDate));
+  const rows = await listBills(getDb());
   return json({ demo: false, items: rows.map((b) => ({ ...b, bucket: classifyDue(b.dueDate, today, b.status === "paid") })) });
 }
 
+const createInput = billInput.extend({ rawExtractedJson: z.unknown().optional() });
+
 export async function POST(req: Request) {
-  const body = await parseBody(req, billInput);
+  const body = await parseBody(req, createInput);
   if (!body.ok) return body.res;
   if (!hasDatabase()) return noDatabase();
-  const [created] = await getDb().insert(schema.bills).values(body.data).returning();
-  return json(created, { status: 201 });
+  return json(await createBill(getDb(), body.data), { status: 201 });
 }

@@ -8,6 +8,8 @@ import { Stat } from "@/components/ui/stat";
 import { CashflowChart } from "@/components/charts/cashflow-chart";
 import { DemoNotice } from "@/components/dashboard/demo-notice";
 import { buildDashboard } from "@/lib/dashboard";
+import { loadFinanceContext } from "@/lib/data/context";
+import { SetupNotice } from "@/components/dashboard/setup-notice";
 import { formatARS, formatPct, todayAR } from "@/lib/finance";
 import type { DueBucket } from "@/types/finance";
 import { dateLabel, monthLabel } from "@/lib/labels";
@@ -29,16 +31,18 @@ const STATUS_COPY = {
   over: { label: "Te pasaste", tone: "bad" as const },
 };
 
-export default function DashboardPage() {
-  const today = todayAR();
-  const d = buildDashboard(today);
+const INCOME_HINT = { manual: "cargado a mano", recibo: "último recibo", estimado: "estimado por convenio", ejemplo: "ejemplo", "sin datos": "cargalo en Configuración" } as const;
+
+export default async function DashboardPage() {
+  const ctx = await loadFinanceContext(todayAR());
+  const d = buildDashboard(ctx);
   const s = d.safe;
   const status = STATUS_COPY[s.status];
   const used = s.availableMonthCents > 0 ? 1 - Math.max(0, s.remainingCents) / s.availableMonthCents : 1;
 
   return (
     <div className="space-y-6">
-      <DemoNotice />
+      {ctx.demo ? <DemoNotice /> : <SetupNotice ctx={ctx} />}
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Cuánto puedo gastar */}
@@ -61,7 +65,7 @@ export default function DashboardPage() {
             Usaste {formatPct(used, 0)} de tu margen variable del mes ({formatARS(s.availableMonthCents)})
           </p>
           <div className="mt-5 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-4">
-            <Stat label="Ingreso neto" value={formatARS(s.netIncomeCents)} />
+            <Stat label="Ingreso neto" value={formatARS(s.netIncomeCents)} hint={INCOME_HINT[d.netIncomeSource]} />
             <Stat label="Vencimientos y cuotas" value={formatARS(s.obligationsCents)} hint={`${formatARS(s.pendingObligationsCents)} por pagar`} />
             <Stat label="A objetivos" value={formatARS(s.goalContributionsCents)} />
             <Stat label="Te queda" value={formatARS(s.remainingCents)} tone={s.remainingCents < 0 ? "bad" : undefined} />
@@ -113,6 +117,7 @@ export default function DashboardPage() {
             <CalendarClock className="h-4 w-4 text-ink-3" />
           </CardHeader>
           <div className="space-y-4">
+            {d.due.length === 0 && <p className="text-sm text-ink-3">No hay vencimientos cargados.</p>}
             {d.due.map((g) => (
               <div key={g.bucket}>
                 <div className="mb-1.5 flex items-center justify-between">
@@ -161,6 +166,7 @@ export default function DashboardPage() {
           </Button>
         </CardHeader>
         <div className="grid gap-5 sm:grid-cols-2">
+          {d.goals.length === 0 && <p className="text-sm text-ink-3">Todavía no tenés objetivos de ahorro.</p>}
           {d.goals.map((g) => (
             <div key={g.id}>
               <div className="mb-1.5 flex items-baseline justify-between text-sm">

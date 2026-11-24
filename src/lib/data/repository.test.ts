@@ -1,0 +1,131 @@
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
+import { beforeAll, describe, expect, it } from "vitest";
+import * as schema from "@/lib/db/schema";
+import type { Db } from "./db-type";
+import * as repo from "./repository";
+import { loadFromDb } from "./context";
+import { buildDashboard } from "@/lib/dashboard";
+
+/** Base Postgres en memoria con las mismas migraciones que Neon. */
+async function freshDb(): Promise<Db> {
+  const client = new PGlite();
+  const dir = path.resolve(import.meta.dirname, "../../../drizzle");
+  for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
+    for (const stmt of readFileSync(path.join(dir, file), "utf8").split("--> statement-breakpoint")) {
+      if (stmt.trim()) await client.exec(stmt);
+    }
+  }
+  return drizzle(client, { schema }) as unknown as Db;
+}
+
+const TODAY = "2026-11-24";
+
+describe("repositorio (PGlite)", () => {
+  let db: Db;
+  beforeAll(async () => {
+    db = await freshDb();
+  }, 30_000);
+
+  it("ajustes: defaults y guardado parcial", async () => {
+    expect(await repo.getSettings(db)).toEqual(repo.DEFAULT_SETTINGS);
+    await repo.saveSettings(db, { monthlyInflation: 0.03, openingBalanceCents: 50_000_00 });
+    const s = await repo.getSettings(db);
+    expect(s.monthlyInflation).toBeCloseTo(0.03);
+    expect(s.openingBalanceCents).toBe(50_000_00);
+    expect(s.netIncomeCents).toBeNull();
+  });
+
+  it("gasto en cuotas: crea las cuotas y no duplica con el mismo clientId", async () => {
+    const tx = {
+      date: "2026-11-10",
+      amountCents: 120_000_00,
+      isIncome: false,
+      paymentMethod: "cuotas" as const,
+      installmentsCount: 3,
+      description: "Heladera",
+      category: "Hogar",
+      owedCents: 0,
+      clientId: "abc-1",
+    };
+    expect(await repo.createTransaction(db, tx)).not.toBeNull();
+    expect(await repo.createTransaction(db, tx)).toBeNull();
+    const inst = await repo.listInstallments(db, "2026-11-01");
+    expect(inst.map((i) => i.dueDate)).toEqual(["2026-12-10", "2027-01-10", "2027-02-10"]);
+    expect(inst.reduce((s, i) => s + i.amountCents, 0)).toBe(120_000_00);
+    expect(inst[0].label).toBe("Heladera");
+  });
+
+  it("boletas: alta y marcar pagada", async () => {
+    const b = await repo.createBill(db, { provider: "EDES", billingPeriod: "2026-11", dueDate: "2026-11-28", amountCents: 45_000_00, status: "pending" });
+    await repo.setBillPaid(db, b.id, true, TODAY);
+    const [row] = await repo.listBills(db, { from: "2026-11-01" });
+    expect(row.status).toBe("paid");
+    expect(row.paidAt).toBe(TODAY);
+  });
+
+  it("índices: IPC por mes e ICL por día, con upsert", async () => {
+    await repo.upsertIndexValues(db, "IPC", [{ date: "2026-10-01", value: 0.02 }]);
+    await repo.upsertIndexValues(db, "IPC", [{ date: "2026-10-15", value: 0.025 }]);
+    await repo.upsertIndexValues(db, "ICL", [{ date: "2026-11-01", value: 24.5 }]);
+    const idx = await repo.getIndices(db);
+    expect(idx.ipc).toEqual([{ month: "2026-10", rate: 0.025 }]);
+    expect(idx.icl).toEqual([{ date: "2026-11-01", value: 24.5 }]);
+  });
+
+  it("escalas y perfil: upsert por categoría y vigencia", async () => {
+    await repo.upsertScale(db, { category: "AUXILIAR_C", validFrom: "2026-10-01", validTo: null, basicCents: 1_100_000_00, nonRemunerativeCents: 40_000_00 });
+    await repo.upsertScale(db, { category: "AUXILIAR_C", validFrom: "2026-10-01", validTo: null, basicCents: 1_150_000_00, nonRemunerativeCents: 40_000_00 });
+    const scales = await repo.listScales(db);
+    expect(scales).toHaveLength(1);
+    expect(scales[0].basicCents).toBe(1_150_000_00);
+    await repo.savePayrollProfile(db, { category: "AUXILIAR_C", hireDate: "2022-03-01", weeklyHours: 48, configOverrides: null });
+    expect((await repo.getPayrollProfile(db))?.hireDate).toBe("2022-03-01");
+  });
+
+  it("objetivos: suma de aportes", async () => {
+    const g = await repo.createGoal(db, { name: "Vacaciones", targetCents: 1_000_000_00, monthlyContributionCents: 100_000_00 });
+    await repo.addGoalContribution(db, g.id, TODAY, 150_000_00);
+    await repo.addGoalContribution(db, g.id, TODAY, 50_000_00);
+    const [goal] = await repo.listGoals(db);
+    expect(goal.savedCents).toBe(200_000_00);
+  });
+
+  it("alquiler: guarda un contrato activo por vez", async () => {
+    const base = { label: "Alquiler", startDate: "2026-03-01", durationMonths: 36, baseRentCents: 500_000_00, adjustmentIntervalMonths: 3, indexType: "IPC" as const, lagMonths: 1 };
+    await repo.saveRentContract(db, { ...base, dueDay: 5 });
+    await repo.saveRentContract(db, { ...base, baseRentCents: 550_000_00, dueDay: 10 });
+    const c = await repo.getActiveRentContract(db);
+    expect(c?.baseRentCents).toBe(550_000_00);
+    expect(c?.dueDay).toBe(10);
+  });
+
+  it("contexto y tablero desde la base", async () => {
+    const ctx = await loadFromDb(db, TODAY);
+    expect(ctx.demo).toBe(false);
+    expect(ctx.netIncomeSource).toBe("estimado");
+    expect(ctx.netIncomeCents).toBeGreaterThan(0);
+    expect(ctx.transactions).toHaveLength(1);
+    expect(ctx.installments[0].label).toBe("Heladera (1/3)");
+    expect(ctx.goals[0].savedCents).toBe(200_000_00);
+
+    const d = buildDashboard(ctx);
+    expect(d.cashflow.months).toHaveLength(6);
+    expect(d.rentNow).toBeGreaterThan(0);
+    // Diciembre trae aguinaldo y la primera cuota.
+    const dec = d.cashflow.months.find((m) => m.month === "2026-12")!;
+    expect(dec.byKind.installment).toBe(40_000_00);
+  });
+
+  it("sueldo manual tiene prioridad", async () => {
+    await repo.saveSettings(db, { netIncomeCents: 900_000_00 });
+    const ctx = await loadFromDb(db, TODAY);
+    expect(ctx.netIncomeSource).toBe("manual");
+    expect(ctx.netIncomeCents).toBe(900_000_00);
+    // Volver a automático (null) no rompe y vuelve al recibo/estimación.
+    await repo.saveSettings(db, { ...(await repo.getSettings(db)), netIncomeCents: null });
+    expect((await loadFromDb(db, TODAY)).netIncomeSource).toBe("estimado");
+  });
+});

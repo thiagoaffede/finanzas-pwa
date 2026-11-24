@@ -1,6 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { send } from "@/lib/client-api";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -10,8 +13,32 @@ import type { IndexType } from "@/types/finance";
 
 const fmtDate = (d: string) => d.split("-").reverse().join("/");
 
-export function RentCalculator({ initial, indices, today, defaultInflation }: { initial: RentContract; indices: IndexData; today: string; defaultInflation: number }) {
+export function RentCalculator({
+  initial,
+  indices,
+  today,
+  defaultInflation,
+  canSave = false,
+  saved = false,
+}: {
+  initial: RentContract & { dueDay?: number };
+  indices: IndexData;
+  today: string;
+  defaultInflation: number;
+  canSave?: boolean;
+  saved?: boolean;
+}) {
+  const router = useRouter();
   const [c, setC] = useState<RentContract>(initial);
+  const [dueDay, setDueDay] = useState(initial.dueDay ?? 10);
+  const [status, setStatus] = useState<string | null>(null);
+
+  async function save() {
+    setStatus("Guardando…");
+    const r = await send("/api/rent", "PUT", { ...c, label: "Alquiler", lagMonths: c.lagMonths ?? 1, dueDay });
+    setStatus(r.ok ? "Contrato guardado." : r.error);
+    if (r.ok) router.refresh();
+  }
   const [inflation, setInflation] = useState(defaultInflation);
   const set = (patch: Partial<RentContract>) => setC((x) => ({ ...x, ...patch }));
 
@@ -28,8 +55,16 @@ export function RentCalculator({ initial, indices, today, defaultInflation }: { 
           <CardTitle>Alquiler y próximo aumento</CardTitle>
           <CardDescription>ICL / IPC / acuerdo fijo. Si falta un índice se proyecta con tu inflación estimada.</CardDescription>
         </div>
+        {canSave && (
+          <div className="flex items-center gap-2">
+            {status && <span className="text-xs text-ink-3">{status}</span>}
+            <Button variant={saved ? "outline" : "accent"} size="sm" onClick={save} disabled={c.baseRentCents <= 0}>
+              {saved ? "Actualizar contrato" : "Guardar contrato"}
+            </Button>
+          </div>
+        )}
       </CardHeader>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         <Field label="Inicio">
           <Input type="date" value={c.startDate} onChange={(e) => e.target.value && set({ startDate: e.target.value })} />
         </Field>
@@ -55,6 +90,9 @@ export function RentCalculator({ initial, indices, today, defaultInflation }: { 
             <Input type="number" min={1} value={c.durationMonths ?? 36} onChange={(e) => set({ durationMonths: Number(e.target.value) || 36 })} />
           </Field>
         )}
+        <Field label="Vence el día">
+          <Input type="number" min={1} max={31} value={dueDay} onChange={(e) => setDueDay(Math.min(31, Math.max(1, Number(e.target.value) || 10)))} />
+        </Field>
         <Field label="Inflación proyectada">
           <PctInput value={inflation} onChange={setInflation} />
         </Field>

@@ -4,42 +4,69 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ScenarioSimulator } from "@/components/forms/scenario-simulator";
-import { monthLabel } from "@/lib/labels";
+import { GoalContribution, NewGoalForm } from "@/components/forms/goals-manager";
+import { monthLabel, PROVIDER_NAME } from "@/lib/labels";
 import { DemoNotice } from "@/components/dashboard/demo-notice";
-import { buildDashboard } from "@/lib/dashboard";
-import { formatARS, formatPct, monthRange, planGoal, priceVsInflation, rentByMonth, todayAR, addMonths, monthOf } from "@/lib/finance";
-import { DEMO_SETTINGS, demoCashflowInput, demoGoals, demoIndices, demoRentContract } from "@/lib/demo-data";
+import { buildCashflowInput, buildDashboard } from "@/lib/dashboard";
+import { loadFinanceContext, type FinanceContext } from "@/lib/data/context";
+import { addMonths, formatARS, formatPct, planGoal, priceVsInflation, todayAR } from "@/lib/finance";
 
 export const metadata: Metadata = { title: "Objetivos y planificación" };
 export const dynamic = "force-dynamic";
 
 const ml = monthLabel;
 
-export default function PlanificacionPage() {
-  const today = todayAR();
-  const d = buildDashboard(today);
-  const margin = d.safe.availableMonthCents + d.safe.goalContributionsCents;
-  const contract = demoRentContract(today);
-  const base = demoCashflowInput(
-    today,
-    rentByMonth(contract, demoIndices(today), monthRange(monthOf(today), 6), { projectedMonthlyInflation: DEMO_SETTINGS.monthlyInflation }),
-  );
+/** Precios a comparar con la inflación: servicios (de las boletas) y, en modo ejemplo, algunos productos. */
+function priceRows(ctx: FinanceContext) {
+  const ipc = new Map((ctx.indices.ipc ?? []).map((p) => [p.month, p.rate]));
+  const from = addMonths(ctx.month, -6);
+  const series: { item: string; points: { month: string; priceCents: number }[] }[] = [];
 
-  const m = monthOf(today);
-  const prices = [
-    { item: "Yerba 1 kg", points: [{ month: addMonths(m, -6), priceCents: 420_000 }, { month: m, priceCents: 520_000 }] },
-    { item: "Leche 1 l", points: [{ month: addMonths(m, -6), priceCents: 130_000 }, { month: m, priceCents: 145_000 }] },
-    { item: "Nafta súper 1 l", points: [{ month: addMonths(m, -6), priceCents: 115_000 }, { month: m, priceCents: 139_000 }] },
-  ].map((p) => ({ ...p, cmp: priceVsInflation(p.points, new Map(), DEMO_SETTINGS.monthlyInflation)! }));
+  for (const [provider, hist] of Object.entries(ctx.billHistory)) {
+    const byPeriod = new Map<string, number>();
+    for (const h of hist ?? []) if (h.period >= from) byPeriod.set(h.period, h.amountCents);
+    const points = [...byPeriod.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, priceCents]) => ({ month, priceCents }));
+    if (points.length >= 2) series.push({ item: PROVIDER_NAME[provider] ?? provider, points: [points[0], points[points.length - 1]] });
+  }
+
+  if (ctx.demo) {
+    const m = ctx.month;
+    series.push(
+      { item: "Yerba 1 kg", points: [{ month: addMonths(m, -6), priceCents: 420_000 }, { month: m, priceCents: 520_000 }] },
+      { item: "Leche 1 l", points: [{ month: addMonths(m, -6), priceCents: 130_000 }, { month: m, priceCents: 145_000 }] },
+      { item: "Nafta súper 1 l", points: [{ month: addMonths(m, -6), priceCents: 115_000 }, { month: m, priceCents: 139_000 }] },
+    );
+  }
+
+  return series.flatMap((p) => {
+    const cmp = priceVsInflation(p.points, ipc, ctx.settings.monthlyInflation);
+    return cmp ? [{ ...p, cmp }] : [];
+  });
+}
+
+export default async function PlanificacionPage() {
+  const ctx = await loadFinanceContext(todayAR());
+  const d = buildDashboard(ctx);
+  const margin = d.safe.availableMonthCents + d.safe.goalContributionsCents;
+  const base = buildCashflowInput(ctx);
+  const prices = priceRows(ctx);
+  const canSave = !ctx.demo;
 
   return (
     <div className="space-y-6">
       <PageHeader title="Objetivos y planificación" description="Metas de ahorro, flujo de caja a 6 meses, simulador e historial de precios." />
-      <DemoNotice />
+      {ctx.demo && <DemoNotice />}
 
       <div className="grid gap-4 md:grid-cols-2">
-        {demoGoals().map((g) => {
-          const plan = planGoal({ targetCents: g.targetCents, savedCents: g.savedCents, today, monthlyContributionCents: g.monthlyContributionCents, monthlyMarginCents: margin });
+        {ctx.goals.map((g) => {
+          const plan = planGoal({
+            targetCents: g.targetCents,
+            savedCents: g.savedCents,
+            today: ctx.today,
+            targetDate: g.targetDate ?? undefined,
+            monthlyContributionCents: g.monthlyContributionCents || undefined,
+            monthlyMarginCents: margin,
+          });
           return (
             <Card key={g.id}>
               <CardHeader>
@@ -67,9 +94,11 @@ export default function PlanificacionPage() {
                 </div>
               </div>
               {plan.pctOfMargin !== null && <p className="mt-3 text-xs text-ink-3">Es el {formatPct(plan.pctOfMargin, 0)} de tu margen mensual.</p>}
+              <GoalContribution goalId={g.id} canSave={canSave} />
             </Card>
           );
         })}
+        <NewGoalForm canSave={canSave} />
       </div>
 
       <Card>
@@ -109,32 +138,47 @@ export default function PlanificacionPage() {
             </tbody>
           </table>
         </div>
+        {!ctx.demo && ctx.settings.openingBalanceCents === 0 && (
+          <p className="mt-3 text-xs text-ink-3">El saldo arranca en $ 0. Cargá tu saldo actual en Configuración para una proyección real.</p>
+        )}
       </Card>
 
-      <ScenarioSimulator base={base} defaultInflation={DEMO_SETTINGS.monthlyInflation} />
+      <ScenarioSimulator base={base} defaultInflation={ctx.settings.monthlyInflation} />
 
       <Card>
         <CardHeader>
           <div>
             <CardTitle>Historial de precios</CardTitle>
-            <CardDescription>Últimos 6 meses vs. tu inflación de referencia ({formatPct(DEMO_SETTINGS.monthlyInflation)} mensual).</CardDescription>
+            <CardDescription>Últimos 6 meses vs. inflación (IPC cargado o {formatPct(ctx.settings.monthlyInflation)} mensual de referencia).</CardDescription>
           </div>
         </CardHeader>
-        <ul className="divide-y divide-border text-sm">
-          {prices.map((p) => (
-            <li key={p.item} className="flex flex-wrap items-center gap-3 py-2.5">
-              <span className="flex-1">{p.item}</span>
-              <span className="num text-ink-2">
-                {formatARS(p.cmp.from.priceCents)} → {formatARS(p.cmp.to.priceCents)}
-              </span>
-              <span className="num w-16 text-right">+{formatPct(p.cmp.priceChange, 0)}</span>
-              <Badge tone={p.cmp.realChange > 0 ? "warn" : "good"}>
-                {p.cmp.realChange > 0 ? "Sobre" : "Bajo"} inflación ({p.cmp.realChange > 0 ? "+" : ""}
-                {formatPct(p.cmp.realChange, 0)})
-              </Badge>
-            </li>
-          ))}
-        </ul>
+        {prices.length === 0 ? (
+          <p className="text-sm text-ink-3">Cuando tengas al menos dos boletas del mismo servicio vas a ver acá cómo subieron contra la inflación.</p>
+        ) : (
+          <ul className="divide-y divide-border text-sm">
+            {prices.map((p) => (
+              <li key={p.item} className="flex flex-wrap items-center gap-3 py-2.5">
+                <span className="flex-1">
+                  {p.item}
+                  <span className="ml-2 text-[11px] text-ink-3">
+                    {ml(p.cmp.from.month)} → {ml(p.cmp.to.month)}
+                  </span>
+                </span>
+                <span className="num text-ink-2">
+                  {formatARS(p.cmp.from.priceCents)} → {formatARS(p.cmp.to.priceCents)}
+                </span>
+                <span className="num w-16 text-right">
+                  {p.cmp.priceChange >= 0 ? "+" : ""}
+                  {formatPct(p.cmp.priceChange, 0)}
+                </span>
+                <Badge tone={p.cmp.realChange > 0 ? "warn" : "good"}>
+                  {p.cmp.realChange > 0 ? "Sobre" : "Bajo"} inflación ({p.cmp.realChange > 0 ? "+" : ""}
+                  {formatPct(p.cmp.realChange, 0)})
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );

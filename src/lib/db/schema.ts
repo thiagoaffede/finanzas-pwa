@@ -73,6 +73,8 @@ export const transactions = pgTable(
     currency: currencyEnum("currency").notNull().default("ARS"),
     isIncome: boolean("is_income").notNull().default(false),
     categoryId: uuid("category_id").references(() => categories.id),
+    /** Categoría como texto (carga rápida). */
+    category: text("category"),
     accountId: uuid("account_id").references(() => accounts.id),
     paymentMethod: paymentMethodEnum("payment_method").notNull().default("contado"),
     installmentsCount: integer("installments_count").notNull().default(1),

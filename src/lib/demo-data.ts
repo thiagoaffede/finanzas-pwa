@@ -1,9 +1,6 @@
 import type { BillProvider, ISODate, YearMonth } from "@/types/finance";
 import type { ScaleEntry } from "@/lib/finance/commerce-union";
 import type { RentContract, IndexData } from "@/lib/finance/rent-adjustment";
-import type { CashflowInput } from "@/lib/finance/cashflow";
-import type { DueItem } from "@/lib/finance/deadlines";
-import { PROVIDER_NAME } from "@/lib/labels";
 import { addMonths, monthOf, toISODate, parseYearMonth, daysInMonth, addMonthsToDate, monthRange } from "@/lib/finance/dates";
 
 /**
@@ -121,37 +118,3 @@ export function demoInstallmentPlans(today: ISODate) {
 }
 
 export const DEMO_NET_INCOME_CENTS = 110_000_000;
-
-export function demoDueItems(today: ISODate, rentCents: number): DueItem[] {
-  const m = monthOf(today);
-  return [
-    ...demoBills(today).map((b) => ({ id: b.id, label: PROVIDER_NAME[b.provider], amountCents: b.amountCents, dueDate: b.dueDate, paid: b.paid, kind: "bill" as const })),
-    { id: "rent", label: "Alquiler", amountCents: rentCents, dueDate: day(m, 10), paid: Number(today.slice(8)) > 10, kind: "rent" },
-    { id: "card", label: "Resumen tarjeta", amountCents: 6_500_000 + 3_500_000, dueDate: day(m, 28), paid: false, kind: "card" },
-  ];
-}
-
-export function demoCashflowInput(today: ISODate, rentByMonth: Map<YearMonth, number>): CashflowInput {
-  const m = monthOf(today);
-  const goals = demoGoals();
-  return {
-    startMonth: m,
-    months: 6,
-    openingBalanceCents: 18_000_000,
-    minBalanceCents: 5_000_000,
-    recurring: [
-      { kind: "income", direction: "in", label: "Sueldo", amountCents: DEMO_NET_INCOME_CENTS, fromMonth: m, monthlyGrowth: 0.018 },
-      { kind: "bill", direction: "out", label: "Servicios", amountCents: 13_900_000, fromMonth: m, monthlyGrowth: DEMO_SETTINGS.monthlyInflation, indexed: true },
-      { kind: "expense", direction: "out", label: "Gastos variables", amountCents: 33_000_000, fromMonth: m, monthlyGrowth: DEMO_SETTINGS.monthlyInflation, indexed: true },
-      ...goals.map((g) => ({ kind: "goal" as const, direction: "out" as const, label: g.name, amountCents: g.monthlyContributionCents, fromMonth: m })),
-    ],
-    installmentPlans: demoInstallmentPlans(today),
-    oneOff: [
-      ...[...rentByMonth.entries()].map(([month, amountCents]) => ({ month, kind: "rent" as const, direction: "out" as const, label: "Alquiler", amountCents })),
-      // Aguinaldo en junio y diciembre (estimado: medio sueldo).
-      ...monthRange(m, 6)
-        .filter((x) => x.endsWith("-06") || x.endsWith("-12"))
-        .map((month) => ({ month, kind: "income" as const, direction: "in" as const, label: "Aguinaldo (SAC)", amountCents: DEMO_NET_INCOME_CENTS / 2 })),
-    ],
-  };
-}

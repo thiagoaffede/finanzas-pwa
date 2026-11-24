@@ -12,6 +12,7 @@ export const transactionInput = z.object({
   amountCents: cents.positive(),
   isIncome: z.boolean().default(false),
   categoryId: z.string().uuid().nullish(),
+  category: z.string().max(60).nullish(),
   accountId: z.string().uuid().nullish(),
   paymentMethod: z.enum(PAYMENT_METHODS).default("contado"),
   installmentsCount: z.number().int().min(1).max(60).default(1),

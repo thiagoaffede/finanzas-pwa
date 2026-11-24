@@ -55,6 +55,7 @@ export function parseBillExtraction(raw: unknown): ParseResult<BillInput> {
       secondDueDate: normalizeDate(x.segundo_vencimiento),
       amountCents,
       status: "pending",
+    recurring: false,
     },
   };
 }

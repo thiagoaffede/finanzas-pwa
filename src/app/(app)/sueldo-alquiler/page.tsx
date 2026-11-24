@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SalaryEstimator } from "@/components/forms/salary-estimator";
 import { RentCalculator } from "@/components/forms/rent-calculator";
 import { DocumentUpload } from "@/components/forms/document-upload";
 import { DemoNotice } from "@/components/dashboard/demo-notice";
 import { loadFinanceContext, seniorityYears } from "@/lib/data/context";
-import { formatARS, monthOf, todayAR } from "@/lib/finance";
-import { monthLabel } from "@/lib/labels";
+import { formatARS, formatPct, monthOf, todayAR } from "@/lib/finance";
+import { dateLabel, monthLabel } from "@/lib/labels";
 
 export const metadata: Metadata = { title: "Sueldo y alquiler" };
 export const dynamic = "force-dynamic";
@@ -65,6 +65,37 @@ export default async function SueldoAlquilerPage() {
           )}
         </Card>
       </div>
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>Historial de sueldos cobrados</CardTitle>
+            <CardDescription>Se arma con los ingresos que marcás como &quot;Es mi sueldo&quot; en Movimientos.</CardDescription>
+          </div>
+        </CardHeader>
+        {ctx.salaryHistory.length === 0 ? (
+          <p className="text-sm text-ink-3">Todavía no registraste ningún cobro de sueldo.</p>
+        ) : (
+          <ul className="divide-y divide-border text-sm">
+            {ctx.salaryHistory.map((r, i) => {
+              const prev = ctx.salaryHistory[i + 1];
+              const change = prev && prev.amountCents > 0 ? r.amountCents / prev.amountCents - 1 : null;
+              return (
+                <li key={r.id} className="flex items-center gap-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p>{monthLabel(r.period)}</p>
+                    <p className="text-[11px] text-ink-3">
+                      Cobrado el {dateLabel(r.date)}
+                      {r.accountName ? ` · ${r.accountName}` : ""}
+                    </p>
+                  </div>
+                  {change !== null && <span className={`num text-xs ${change >= 0 ? "text-good" : "text-bad"}`}>{formatPct(change, 1)}</span>}
+                  <span className="num font-medium">{formatARS(r.amountCents)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
       <RentCalculator
         initial={initialRent}
         indices={ctx.indices}

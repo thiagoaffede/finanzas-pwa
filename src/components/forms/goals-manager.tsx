@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Plus, Trash2, X } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
@@ -160,14 +161,7 @@ export function GoalEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center" onClick={() => setOpen(false)}>
-      <div className="w-full max-w-md rounded-card bg-surface p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Editar objetivo</h3>
-          <Button variant="ghost" size="sm" aria-label="Cerrar" onClick={() => setOpen(false)}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+    <Dialog title="Editar objetivo" onClose={() => setOpen(false)}>
         <div className="grid gap-3">
           <Field label="Nombre">
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
@@ -191,7 +185,6 @@ export function GoalEditor({
             <Trash2 className="h-3.5 w-3.5" /> Eliminar
           </Button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

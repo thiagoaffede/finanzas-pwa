@@ -1,4 +1,3 @@
-import type { BillProvider } from "@/types/finance";
 import {
   addMonths,
   calculateSafeFromBalance,
@@ -19,7 +18,7 @@ import {
   type DueItem,
 } from "@/lib/finance";
 import { availableBalance, isVariableSpend, type FinanceContext } from "@/lib/data/context";
-import { monthLabel, PROVIDER_NAME } from "@/lib/labels";
+import { monthLabel } from "@/lib/labels";
 
 /** Arma los números del tablero a partir del contexto (base real o datos de ejemplo). */
 
@@ -39,7 +38,7 @@ export function currentRent(ctx: FinanceContext): number {
 export function dueItems(ctx: FinanceContext): DueItem[] {
   const items: DueItem[] = ctx.bills.map((b) => ({
     id: b.id,
-    label: PROVIDER_NAME[b.provider] ?? b.provider,
+    label: b.label,
     amountCents: b.amountCents,
     dueDate: b.dueDate,
     paid: b.paid,
@@ -64,13 +63,16 @@ export function dueItems(ctx: FinanceContext): DueItem[] {
   return items;
 }
 
-/** Suma de la última boleta de cada servicio: base para proyectar servicios. */
+/** Suma de la última boleta de cada servicio y gasto fijo: base para proyectar servicios. */
 function latestBillsTotal(ctx: FinanceContext): number {
-  const latest = new Map<BillProvider, { period: string; amountCents: number }>();
-  for (const [p, hist] of Object.entries(ctx.billHistory) as [BillProvider, { period: string; amountCents: number }[]][]) {
-    for (const h of hist) if (!latest.has(p) || h.period > latest.get(p)!.period) latest.set(p, h);
+  const latest = new Map<string, { period: string; amountCents: number }>();
+  for (const [series, hist] of Object.entries(ctx.billHistory)) {
+    for (const h of hist) if (!latest.has(series) || h.period > latest.get(series)!.period) latest.set(series, h);
   }
-  for (const b of ctx.bills) if (!latest.has(b.provider) || b.period > latest.get(b.provider)!.period) latest.set(b.provider, b);
+  for (const b of ctx.bills) {
+    if (b.provider === "OTRO" && !b.recurring) continue; // un vencimiento suelto no se repite
+    if (!latest.has(b.series) || b.period > latest.get(b.series)!.period) latest.set(b.series, b);
+  }
   return [...latest.values()].reduce((s, b) => s + b.amountCents, 0);
 }
 
@@ -79,12 +81,27 @@ export function payrollInput(ctx: FinanceContext) {
   return { monthlyNetCents: ctx.netIncomeCents, hireDate: ctx.profile?.hireDate ?? null, paydayBusinessDay: ctx.settings.paydayBusinessDay };
 }
 
+/** ¿Ya registraste el cobro del sueldo de ese mes trabajado? */
+export function salaryReceived(ctx: Pick<FinanceContext, "salaryHistory">, accrualMonth: string) {
+  return ctx.salaryHistory.some((r) => r.period === accrualMonth);
+}
+
+/** Sueldo que todavía no cobraste (para precargar el ingreso "Es mi sueldo"). */
+export function pendingSalary(ctx: FinanceContext): { period: string; amountCents: number; date: string } | null {
+  const pay = payrollInput(ctx);
+  for (const month of [ctx.month, addMonths(ctx.month, 1)]) {
+    const p = salaryPayment(month, pay);
+    if (p.amountCents > 0 && !salaryReceived(ctx, p.accrualMonth)) return { period: p.accrualMonth, amountCents: p.amountCents, date: p.date };
+  }
+  return null;
+}
+
 /** Próximo cobro de sueldo (y aguinaldo si cae antes del siguiente sueldo). */
 export function nextIncome(ctx: FinanceContext) {
   const pay = payrollInput(ctx);
-  // El cobro es por la tarde: el mismo día todavía cuenta como pendiente.
+  // El cobro es por la tarde: el mismo día todavía cuenta como pendiente, salvo que ya lo hayas registrado.
   let salary = salaryPayment(ctx.month, pay);
-  if (ctx.today > salary.date || salary.amountCents === 0) salary = salaryPayment(addMonths(ctx.month, 1), pay);
+  if (ctx.today > salary.date || salary.amountCents === 0 || salaryReceived(ctx, salary.accrualMonth)) salary = salaryPayment(addMonths(ctx.month, 1), pay);
   const sac = [ctx.month, addMonths(ctx.month, 1)].map((m) => sacPayment(m, pay)).find((x) => x && x.date >= ctx.today) ?? null;
   return { salary, sac, prorated: salary.days < 30 };
 }
@@ -101,12 +118,15 @@ export function buildCashflowInput(ctx: FinanceContext, months = 6): CashflowInp
   const grow = (c: number) => Math.round(c * (1 + infl));
   const pay = payrollInput(ctx);
   const spentThisMonth = ctx.transactions.filter(isVariableSpend).reduce((s, t) => s + t.amountCents - t.owedCents, 0);
-  const variable = Math.max(ctx.avgVariableSpendCents, spentThisMonth);
+  // El gasto variable se proyecta con el promedio de meses anteriores: un gasto suelto de este mes no se repite.
+  const variable = ctx.avgVariableSpendCents;
   const services = latestBillsTotal(ctx);
   const rent = ctx.rent ? rentByMonth(ctx.rent, ctx.indices, window, rentOptions(ctx)) : new Map<string, number>();
   const goals = ctx.goals.filter((g) => g.monthlyContributionCents > 0 && g.savedCents < g.targetCents);
   const rentDue = ctx.rent ? dayOfMonth(ctx.month, ctx.rent.dueDay) : null;
   const unpaidBills = ctx.bills.filter((b) => !b.paid && b.dueDate.slice(0, 7) <= ctx.month).reduce((s, b) => s + b.amountCents, 0);
+  // Vencimientos sueltos de meses que vienen (p. ej. "lo pago el mes que viene"): entran una sola vez.
+  const laterOneOffs = ctx.bills.filter((b) => !b.paid && !b.recurring && b.provider === "OTRO" && b.dueDate.slice(0, 7) > ctx.month);
   const out = (kind: "bill" | "expense" | "goal" | "rent" | "installment", label: string, amountCents: number, month = ctx.month) =>
     ({ month, kind, direction: "out" as const, label, amountCents });
 
@@ -132,12 +152,13 @@ export function buildCashflowInput(ctx: FinanceContext, months = 6): CashflowInp
     oneOff: [
       ...thisMonth,
       ...ctx.installments.map((i) => out("installment", i.label, i.amountCents, i.month)),
+      ...laterOneOffs.map((b) => out("bill", b.label, b.amountCents, b.dueDate.slice(0, 7))),
       ...[...rent.entries()].filter(([month]) => month > ctx.month).map(([month, amountCents]) => out("rent", "Alquiler", amountCents, month)),
       // Sueldo: entra el N.º día hábil (el del mes anterior, proporcional si entraste a mitad de mes).
       // El del mes en curso cuenta si todavía no se cobró (el día de pago cuenta como pendiente).
       ...window
         .map((month) => ({ month, p: salaryPayment(month, pay) }))
-        .filter(({ month, p }) => p.amountCents > 0 && (month > ctx.month || ctx.today <= p.date))
+        .filter(({ month, p }) => p.amountCents > 0 && !salaryReceived(ctx, p.accrualMonth) && (month > ctx.month || ctx.today <= p.date))
         .map(({ month, p }) => ({ month, kind: "income" as const, direction: "in" as const, label: p.days < 30 ? `Sueldo (${p.days} días)` : "Sueldo", amountCents: p.amountCents })),
       // Aguinaldo (SAC) estimado: medio sueldo proporcional a los días trabajados del semestre.
       ...window
@@ -152,9 +173,9 @@ export function billAnomalies(ctx: FinanceContext) {
   return ctx.bills
     .filter((b) => !b.paid)
     .map((b) => {
-      const history = (ctx.billHistory[b.provider] ?? []).filter((h) => h.period !== b.period);
+      const history = (ctx.billHistory[b.series] ?? []).filter((h) => h.period !== b.period);
       const r = detectBillAnomaly(history, { period: b.period, amountCents: b.amountCents }, { monthlyInflation: ctx.settings.monthlyInflation });
-      return { billId: b.id, label: `${PROVIDER_NAME[b.provider] ?? b.provider} (${monthLabel(b.period)})`, ...r };
+      return { billId: b.id, label: `${b.label} (${monthLabel(b.period)})`, ...r };
     });
 }
 

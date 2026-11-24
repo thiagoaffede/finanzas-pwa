@@ -5,11 +5,11 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { Button } from "@/components/ui/button";
 import { MovementsView } from "@/components/forms/movements-view";
 import { AccountsManager } from "@/components/forms/accounts-manager";
-import { BillsList } from "@/components/forms/bills-list";
+import { BillsList, NewBillForm } from "@/components/forms/bills-list";
 import { DocumentUpload } from "@/components/forms/document-upload";
 import { DemoNotice } from "@/components/dashboard/demo-notice";
 import { loadFinanceContext } from "@/lib/data/context";
-import { billAnomalies } from "@/lib/dashboard";
+import { billAnomalies, nextIncome, pendingSalary } from "@/lib/dashboard";
 import { todayAR } from "@/lib/finance";
 
 export const metadata: Metadata = { title: "Movimientos y servicios" };
@@ -17,6 +17,8 @@ export const dynamic = "force-dynamic";
 
 export default async function MovimientosPage() {
   const ctx = await loadFinanceContext(todayAR());
+  const accounts = ctx.accounts.map(({ id, name, kind }) => ({ id, name, kind }));
+  const next = ctx.netIncomeCents > 0 ? nextIncome(ctx) : null;
   const anomalies = Object.fromEntries(billAnomalies(ctx).filter((a) => a.isAnomaly).map((a) => [a.billId, a.reason]));
 
   return (
@@ -36,7 +38,13 @@ export default async function MovimientosPage() {
         </div>
       </PageHeader>
       {ctx.demo && <DemoNotice />}
-      <MovementsView transactions={ctx.transactions} canSave={!ctx.demo} accounts={ctx.accounts.map(({ id, name, kind }) => ({ id, name, kind }))} />
+      <MovementsView
+        transactions={ctx.movements}
+        canSave={!ctx.demo}
+        accounts={accounts}
+        salary={ctx.netIncomeCents > 0 ? pendingSalary(ctx) : null}
+        nextPayday={next?.salary.date}
+      />
       <AccountsManager accounts={ctx.accounts} canSave={!ctx.demo} />
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -44,12 +52,15 @@ export default async function MovimientosPage() {
           <CardHeader>
             <div>
               <CardTitle>Servicios</CardTitle>
-              <CardDescription>Boletas impagas y las de este mes.</CardDescription>
+              <CardDescription>Boletas y gastos fijos impagos, y los de este mes.</CardDescription>
             </div>
           </CardHeader>
-          <BillsList bills={ctx.bills} today={ctx.today} anomalies={anomalies} canSave={!ctx.demo} />
+          <BillsList bills={ctx.bills} today={ctx.today} anomalies={anomalies} canSave={!ctx.demo} accounts={accounts} />
         </Card>
-        <DocumentUpload kind="bill" canSave={!ctx.demo} />
+        <div className="space-y-4">
+          <DocumentUpload kind="bill" canSave={!ctx.demo} />
+          <NewBillForm canSave={!ctx.demo} today={ctx.today} />
+        </div>
       </div>
     </div>
   );

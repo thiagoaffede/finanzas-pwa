@@ -26,7 +26,7 @@ function priceRows(ctx: FinanceContext) {
     const byPeriod = new Map<string, number>();
     for (const h of hist ?? []) if (h.period >= from) byPeriod.set(h.period, h.amountCents);
     const points = [...byPeriod.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, priceCents]) => ({ month, priceCents }));
-    if (points.length >= 2) series.push({ item: PROVIDER_NAME[provider] ?? provider, points: [points[0], points[points.length - 1]] });
+    if (points.length >= 2) series.push({ item: PROVIDER_NAME[provider] ?? ctx.bills.find((b) => b.series === provider)?.label ?? provider.replace(/^OTRO:/, ""), points: [points[0], points[points.length - 1]] });
   }
 
   if (ctx.demo) {

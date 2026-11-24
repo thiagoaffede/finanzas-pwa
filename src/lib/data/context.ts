@@ -8,6 +8,7 @@ import { getDb, hasDatabase } from "@/lib/db";
 import type { Db } from "./db-type";
 import * as repo from "./repository";
 import * as demo from "@/lib/demo-data";
+import { PROVIDER_NAME } from "@/lib/labels";
 
 /**
  * Todo lo que las pantallas necesitan, en un solo modelo.
@@ -23,6 +24,20 @@ export interface BillView {
   paid: boolean;
   /** Archivo original guardado (PDF o foto). */
   documentId?: string | null;
+  /** Nombre para mostrar ("EDES (luz)", "Gimnasio"). */
+  label: string;
+  /** Gasto fijo mensual (se proyecta todos los meses). */
+  recurring: boolean;
+  /** Serie para comparar con meses anteriores: el proveedor, o "OTRO:<nombre>". */
+  series: string;
+}
+
+export function billLabel(b: { provider: BillProvider | string; providerLabel?: string | null }) {
+  return b.provider === "OTRO" ? b.providerLabel || "Vencimiento" : (PROVIDER_NAME[b.provider] ?? b.provider);
+}
+
+export function billSeries(b: { provider: BillProvider | string; providerLabel?: string | null }) {
+  return b.provider === "OTRO" ? `OTRO:${(b.providerLabel ?? "").trim().toLowerCase()}` : b.provider;
 }
 
 export interface TxView {
@@ -36,6 +51,19 @@ export interface TxView {
   owedByName?: string;
   owedCents: number;
   reimbursedCents: number;
+  isIncome?: boolean;
+  accountId?: string | null;
+  /** Pago de una boleta (no es gasto variable). */
+  billId?: string | null;
+  salaryPeriod?: string | null;
+}
+
+export interface SalaryRecord {
+  id: string;
+  period: YearMonth;
+  date: ISODate;
+  amountCents: number;
+  accountName: string | null;
 }
 
 export interface InstallmentView {
@@ -67,8 +95,14 @@ export interface FinanceContext {
   rent: (RentContract & { dueDay: number }) | null;
   indices: IndexData;
   bills: BillView[];
-  billHistory: Partial<Record<BillProvider, { period: YearMonth; amountCents: number }[]>>;
+  /** Historial por serie (proveedor, o gasto fijo "OTRO:<nombre>"). */
+  billHistory: Record<string, { period: YearMonth; amountCents: number }[]>;
+  /** Gastos del mes (sin ingresos). */
   transactions: TxView[];
+  /** Todos los movimientos del mes, ingresos incluidos (para la lista editable). */
+  movements: TxView[];
+  /** Sueldos cobrados y registrados. */
+  salaryHistory: SalaryRecord[];
   installments: InstallmentView[];
   goals: GoalView[];
   accounts: repo.AccountView[];
@@ -79,8 +113,8 @@ export interface FinanceContext {
 }
 
 /** Gastos que no son "variables del día a día": se pagan como cuota o resumen. */
-export function isVariableSpend(t: { paymentMethod: PaymentMethod }) {
-  return t.paymentMethod !== "cuotas" && t.paymentMethod !== "tarjeta";
+export function isVariableSpend(t: { paymentMethod: PaymentMethod; billId?: string | null; isIncome?: boolean }) {
+  return !t.isIncome && !t.billId && t.paymentMethod !== "cuotas" && t.paymentMethod !== "tarjeta";
 }
 
 /** Plata disponible hoy: suma de cuentas (sin tarjetas) si las cargaste; si no, el saldo de Configuración. */
@@ -141,6 +175,7 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     repo.listTransactions(db, { from: `${addMonths(month, -3)}-01`, to: lastDayOfMonth(addMonths(month, -1)) }),
     repo.listAccounts(db),
   ]);
+  const salaryRows = await repo.listSalaryHistory(db);
 
   const payslips: FinanceContext["payslips"] = payslipRows.map((p) => ({
     period: p.period,
@@ -159,9 +194,13 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     amountCents: b.amountCents,
     paid: b.status === "paid",
     documentId: b.sourceDocumentId,
+    label: billLabel(b),
+    recurring: b.recurring,
+    series: billSeries(b),
   }));
+  // Historial para proyectar y comparar: servicios conocidos y gastos fijos (no los vencimientos sueltos).
   const billHistory: FinanceContext["billHistory"] = {};
-  for (const b of allBills) (billHistory[b.provider] ??= []).push({ period: b.period, amountCents: b.amountCents });
+  for (const b of allBills) if (b.provider !== "OTRO" || b.recurring) (billHistory[b.series] ??= []).push({ period: b.period, amountCents: b.amountCents });
   // En pantalla: lo impago y lo que vence este mes.
   const bills = allBills.filter((b) => !b.paid || monthOf(b.dueDate) === month);
 
@@ -173,6 +212,22 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     : 0;
 
   const income = resolveNetIncome(settings, payslips, profile, scales, today);
+  const movements: TxView[] = txRows.map((t) => ({
+    id: t.id,
+    date: t.date,
+    description: t.description ?? t.category ?? (t.isIncome ? "Ingreso" : "Gasto"),
+    category: t.category ?? "Otros",
+    amountCents: t.amountCents,
+    paymentMethod: t.paymentMethod,
+    installments: t.installmentsCount,
+    owedByName: t.owedByName ?? undefined,
+    owedCents: t.owedCents,
+    reimbursedCents: t.reimbursedCents,
+    isIncome: t.isIncome,
+    accountId: t.accountId,
+    billId: t.billId,
+    salaryPeriod: t.salaryPeriod,
+  }));
 
   return {
     demo: false,
@@ -186,20 +241,9 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     indices,
     bills,
     billHistory,
-    transactions: txRows
-      .filter((t) => !t.isIncome)
-      .map((t) => ({
-        id: t.id,
-        date: t.date,
-        description: t.description ?? t.category ?? "Gasto",
-        category: t.category ?? "Otros",
-        amountCents: t.amountCents,
-        paymentMethod: t.paymentMethod,
-        installments: t.installmentsCount,
-        owedByName: t.owedByName ?? undefined,
-        owedCents: t.owedCents,
-        reimbursedCents: t.reimbursedCents,
-      })),
+    transactions: movements.filter((t) => !t.isIncome),
+    movements,
+    salaryHistory: salaryRows.map((r) => ({ id: r.id, period: r.period!, date: r.date, amountCents: r.amountCents, accountName: r.accountName })),
     installments: inst.map((i) => ({
       month: monthOf(i.dueDate),
       dueDate: i.dueDate,
@@ -224,6 +268,18 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
 export function loadDemo(today: ISODate): FinanceContext {
   const month = monthOf(today);
   const bills = demo.demoBills(today);
+  const demoTx: TxView[] = demo.demoTransactions(today).map((t) => ({
+      id: t.id,
+      date: t.date,
+      description: t.description,
+      category: t.category,
+      amountCents: t.amountCents,
+      paymentMethod: t.paymentMethod,
+      installments: t.installments ?? 1,
+      owedByName: t.owedByName,
+      owedCents: t.owedCents ?? 0,
+      reimbursedCents: 0,
+    }));
   return {
     demo: true,
     today,
@@ -243,22 +299,13 @@ export function loadDemo(today: ISODate): FinanceContext {
     ],
     rent: { ...demo.demoRentContract(today), dueDay: 10 },
     indices: demo.demoIndices(today),
-    bills: bills.map((b) => ({ id: b.id, provider: b.provider, period: b.period, dueDate: b.dueDate, amountCents: b.amountCents, paid: b.paid })),
+    bills: bills.map((b) => ({ id: b.id, provider: b.provider, period: b.period, dueDate: b.dueDate, amountCents: b.amountCents, paid: b.paid, label: billLabel(b), recurring: false, series: billSeries(b) })),
     billHistory: {
       CAMUZZI: [...demo.demoGasHistory(today), ...bills.filter((b) => b.provider === "CAMUZZI").map((b) => ({ period: b.period, amountCents: b.amountCents }))],
     },
-    transactions: demo.demoTransactions(today).map((t) => ({
-      id: t.id,
-      date: t.date,
-      description: t.description,
-      category: t.category,
-      amountCents: t.amountCents,
-      paymentMethod: t.paymentMethod,
-      installments: t.installments ?? 1,
-      owedByName: t.owedByName,
-      owedCents: t.owedCents ?? 0,
-      reimbursedCents: 0,
-    })),
+    transactions: demoTx,
+    movements: demoTx,
+    salaryHistory: [],
     installments: demo
       .demoInstallmentPlans(today)
       .flatMap(installmentPlan)

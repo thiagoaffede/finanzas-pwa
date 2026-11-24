@@ -17,3 +17,19 @@ export function monthLabel(ym: string): string {
 export function dateLabel(d: string): string {
   return d.split("-").reverse().join("/");
 }
+
+export const COMMERCE_CATEGORIES = [
+  "MAESTRANZA_A", "MAESTRANZA_B", "MAESTRANZA_C",
+  "ADMINISTRATIVO_A", "ADMINISTRATIVO_B", "ADMINISTRATIVO_C", "ADMINISTRATIVO_D", "ADMINISTRATIVO_E", "ADMINISTRATIVO_F",
+  "CAJERO_A", "CAJERO_B", "CAJERO_C",
+  "AUXILIAR_A", "AUXILIAR_B", "AUXILIAR_C", "AUXILIAR_ESPECIALIZADO_A", "AUXILIAR_ESPECIALIZADO_B",
+  "VENDEDOR_A", "VENDEDOR_B", "VENDEDOR_C", "VENDEDOR_D",
+] as const;
+
+/** "AUXILIAR_ESPECIALIZADO_A" → "Auxiliar especializado A" */
+export function categoryLabel(c: string): string {
+  return c
+    .split("_")
+    .map((w, i) => (w.length === 1 ? w : i === 0 ? w[0] + w.slice(1).toLowerCase() : w.toLowerCase()))
+    .join(" ");
+}

@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Wallet } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LogOut, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NAV_ITEMS } from "./nav-items";
+import { NAV_ITEMS, SETTINGS_ITEM } from "./nav-items";
 
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -12,6 +12,7 @@ function isActive(pathname: string, href: string) {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-border bg-surface px-4 py-6 lg:flex">
       <Link href="/" className="mb-8 flex items-center gap-2 px-2">
@@ -21,7 +22,7 @@ export function Sidebar() {
         <span className="text-[15px] font-semibold tracking-tight">Mis Finanzas</span>
       </Link>
       <nav className="flex flex-col gap-1">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
+        {[...NAV_ITEMS, SETTINGS_ITEM].map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
@@ -35,9 +36,17 @@ export function Sidebar() {
           </Link>
         ))}
       </nav>
-      <p className="mt-auto px-2 text-[11px] leading-relaxed text-ink-3">
-        Montos en pesos. Los valores de ejemplo se reemplazan al conectar la base.
-      </p>
+      <button
+        type="button"
+        onClick={async () => {
+          await fetch("/api/auth/logout", { method: "POST" });
+          router.replace("/login");
+          router.refresh();
+        }}
+        className="mt-auto flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-ink-3 hover:bg-surface-muted hover:text-ink"
+      >
+        <LogOut className="h-4 w-4" /> Salir
+      </button>
     </aside>
   );
 }

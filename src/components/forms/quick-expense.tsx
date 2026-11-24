@@ -13,7 +13,7 @@ import type { PaymentMethod } from "@/types/finance";
 
 const CATEGORIES = ["Comida", "Hogar", "Traslados", "Salud", "Salidas", "Ropa", "Servicios", "Otros"];
 
-export function QuickExpense({ onAdded }: { onAdded?: (tx: QueuedTransaction) => void }) {
+export function QuickExpense({ onQueued, onSynced }: { onQueued?: (tx: QueuedTransaction) => void; onSynced?: () => void }) {
   const params = useSearchParams();
   const [amount, setAmount] = useState(0);
   const [description, setDescription] = useState("");
@@ -27,11 +27,16 @@ export function QuickExpense({ onAdded }: { onAdded?: (tx: QueuedTransaction) =>
   const [formKey, setFormKey] = useState(0);
 
   useEffect(() => {
-    const sync = () => flushQueue().then(setPending);
+    const sync = () =>
+      flushQueue().then((left) => {
+        setPending(left);
+        onSynced?.();
+      });
     queueMicrotask(() => setPending(readQueue().length));
     sync();
     window.addEventListener("online", sync);
     return () => window.removeEventListener("online", sync);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function submit(e: React.FormEvent) {
@@ -49,11 +54,13 @@ export function QuickExpense({ onAdded }: { onAdded?: (tx: QueuedTransaction) =>
       item: description || null,
       owedByName: owedBy || null,
       owedCents: owedBy ? owed : 0,
-      notes: category,
+      category,
+      notes: null,
     };
     enqueue(tx);
-    onAdded?.(tx);
+    onQueued?.(tx);
     setPending(await flushQueue());
+    onSynced?.();
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
     setAmount(0);

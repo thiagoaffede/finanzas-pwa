@@ -19,6 +19,8 @@ export interface DollarSnapshot {
   quotes: DollarQuote[];
   fetchedAt: string;
   stale: boolean;
+  /** true solo en la consulta que trajo datos nuevos (para guardarlos en el historial). */
+  fresh?: boolean;
   error?: string;
 }
 
@@ -51,7 +53,7 @@ export function normalizeDollarResponse(raw: unknown): DollarQuote[] {
 export async function getDollarQuotes(opts: { fetcher?: typeof fetch; now?: number } = {}): Promise<DollarSnapshot> {
   const now = opts.now ?? Date.now();
   const ttl = Number(process.env.DOLLAR_CACHE_MINUTES ?? 20) * 60_000;
-  if (cache && now - cache.at < ttl) return cache.data;
+  if (cache && now - cache.at < ttl) return { ...cache.data, fresh: false };
 
   const url = process.env.DOLLAR_API_URL ?? "https://dolarapi.com/v1/dolares";
   try {
@@ -60,7 +62,7 @@ export async function getDollarQuotes(opts: { fetcher?: typeof fetch; now?: numb
     const quotes = normalizeDollarResponse(await res.json());
     const data: DollarSnapshot = { quotes, fetchedAt: new Date(now).toISOString(), stale: false };
     cache = { at: now, data };
-    return data;
+    return { ...data, fresh: true };
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     // Si falla, devolvemos lo último que tengamos marcado como viejo.

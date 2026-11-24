@@ -20,15 +20,29 @@ npm test                     # tests de la lógica financiera
 
 ### Base de datos (Neon)
 
-1. Creá una base en [Neon](https://neon.tech) y pegá la URL en `DATABASE_URL` (`.env.local`).
-2. `npm run db:migrate` aplica `drizzle/0000_init.sql`.
-3. Cargá la escala de Comercio vigente (`payroll_scales`) y los índices (`index_values`).
+1. Creá una base en [Neon](https://neon.tech) y pegá la URL en `DATABASE_URL` (`.env.local`, que no se sube al repo).
+2. `npm run db:migrate` aplica las migraciones de `drizzle/`.
+3. En la app, entrá a **Configuración** y cargá tu saldo, tu puesto, la escala de Comercio vigente y los índices (IPC/ICL).
+   El contrato de alquiler se guarda desde **Sueldo y alquiler**.
+
+### Publicar en Vercel
+
+1. Importá el repo en Vercel.
+2. En *Settings → Environment Variables* cargá:
+   - `DATABASE_URL`: la URL de Neon.
+   - `APP_PASSWORD`: la contraseña para entrar. **Sin ella la app queda abierta.**
+   - `ANTHROPIC_API_KEY`: para leer boletas y recibos.
+   - `AUTH_SECRET` (opcional): cualquier texto largo al azar.
+3. El build (`vercel-build`) aplica las migraciones pendientes antes de compilar.
 
 ## Estructura
 
 ```
 src/
-├── app/                    # Páginas (Tablero, Movimientos, Sueldo y alquiler, Planificación, Calculadoras) y API
+├── app/(app)/              # Páginas (Tablero, Movimientos, Sueldo y alquiler, Planificación, Calculadoras, Configuración)
+├── app/api/                # API (todas protegidas por el login)
+├── app/login/              # Pantalla de ingreso
+├── proxy.ts                # Pide sesión en páginas y API
 ├── components/             # ui/ (botones, cards, inputs), layout/, dashboard/, forms/, charts/
 ├── lib/
 │   ├── finance/            # Lógica pura y testeada (ver docs/domain-rules.md)
@@ -36,7 +50,10 @@ src/
 │   ├── schemas/            # Validaciones Zod
 │   ├── market/             # Cotizaciones del dólar con caché
 │   ├── db/                 # Esquema Drizzle y conexión
-│   └── demo-data.ts        # Datos de ejemplo (se reemplazan al conectar la base)
+│   ├── data/               # Repositorio (consultas) y contexto que alimenta las pantallas
+│   ├── extraction/         # Lectura de PDFs/fotos con Claude
+│   ├── auth.ts             # Sesión firmada por cookie
+│   └── demo-data.ts        # Datos de ejemplo (solo sin base)
 └── types/finance.ts
 public/sw.js                # Service worker: caché offline del shell
 drizzle/                    # Migraciones SQL
@@ -47,13 +64,12 @@ docs/                       # Reglas de negocio y esquemas de extracción
 
 - [x] **Fase 1** — PWA con UI clara, navegación (sidebar en compu, barra inferior en celu), manifest, service worker, esquema de base.
 - [x] **Fase 2** — Núcleo financiero puro con tests: cuánto puedo gastar, Auxiliar C, alquiler, contado vs. cuotas, cashflow, anomalías, simulador, objetivos, historial de precios.
-- [ ] **Fase 3** — Lectura de boletas y recibos con LLM, historial de cotizaciones en la base, carga de escalas e índices desde la UI, pantallas conectadas a la base.
+- [x] **Fase 3** — Lectura de boletas y recibos con Claude (con revisión antes de guardar), historial de cotizaciones en la base, configuración (supuestos, puesto, escalas, índices), pantallas conectadas a la base y login con contraseña.
 
-## Antes de publicarla
+## Seguridad y datos
 
-Es una app de un solo usuario y **todavía no tiene login**. Antes de desplegarla en una URL
-pública (por ejemplo Vercel) hay que agregar autenticación o, como mínimo, protección por
-contraseña.
+Es una app de un solo usuario protegida por una contraseña (`APP_PASSWORD`). Las credenciales
+van solo en `.env.local` o en las variables de Vercel, nunca en el repo.
 
 Los montos se guardan en centavos enteros. Escalas, porcentajes de aportes e índices son
 **valores de referencia** hasta que cargues los vigentes: ver `docs/domain-rules.md`.

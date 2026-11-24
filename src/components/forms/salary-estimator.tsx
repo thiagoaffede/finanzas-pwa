@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { categoryLabel } from "@/lib/labels";
 import {
   compareEstimateWithPayslip,
   estimateCommerceSalary,
@@ -14,17 +15,23 @@ import {
   type ScaleEntry,
 } from "@/lib/finance";
 
-const CATEGORY_LABEL = (c: string) =>
-  c
-    .split("_")
-    .map((w, i) => (w.length === 1 ? w : i === 0 ? w[0] + w.slice(1).toLowerCase() : w.toLowerCase()))
-    .join(" ");
+const CATEGORY_LABEL = categoryLabel;
 
-export function SalaryEstimator({ scales, today, lastPayslip }: { scales: ScaleEntry[]; today: string; lastPayslip?: PayslipTotals }) {
+export function SalaryEstimator({
+  scales,
+  today,
+  lastPayslip,
+  initial,
+}: {
+  scales: ScaleEntry[];
+  today: string;
+  lastPayslip?: PayslipTotals;
+  initial?: { category: CommerceCategory; seniorityYears: number; weeklyHours: number };
+}) {
   const categories = [...new Set(scales.map((s) => s.category))];
-  const [category, setCategory] = useState<CommerceCategory>("AUXILIAR_C");
-  const [seniority, setSeniority] = useState(3);
-  const [hours, setHours] = useState(48);
+  const [category, setCategory] = useState<CommerceCategory>(initial?.category ?? categories[0] ?? "AUXILIAR_C");
+  const [seniority, setSeniority] = useState(initial?.seniorityYears ?? 0);
+  const [hours, setHours] = useState(initial?.weeklyHours ?? 48);
   const [presentismo, setPresentismo] = useState(true);
   const [date, setDate] = useState(today);
 
@@ -73,7 +80,13 @@ export function SalaryEstimator({ scales, today, lastPayslip }: { scales: ScaleE
         </Field>
       </div>
 
-      {error && <p className="mt-4 rounded-xl bg-bad-soft p-3 text-sm text-bad">{error}</p>}
+      {scales.length === 0 ? (
+        <p className="mt-4 rounded-xl bg-surface-muted p-3 text-sm text-ink-2">
+          Cargá la escala vigente en <a href="/configuracion#escalas" className="font-medium text-ink underline">Configuración</a> para estimar el sueldo.
+        </p>
+      ) : (
+        error && <p className="mt-4 rounded-xl bg-bad-soft p-3 text-sm text-bad">{error}</p>
+      )}
 
       {estimate && (
         <div className="mt-5 grid gap-6 lg:grid-cols-2">

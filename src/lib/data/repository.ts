@@ -4,8 +4,8 @@ import type { Db } from "./db-type";
 import type { BillProvider, ISODate, Rate, YearMonth } from "@/types/finance";
 import type { CommerceCategory, CommerceUnionConfig, PayLine, ScaleEntry } from "@/lib/finance/commerce-union";
 import type { IndexData, RentContract } from "@/lib/finance/rent-adjustment";
-import type { BillInput, TransactionInput } from "@/lib/schemas";
-import { addMonthsToDate, lastDayOfMonth } from "@/lib/finance/dates";
+import type { BillInput, BillPatch, TransactionInput, TransactionPatch } from "@/lib/schemas";
+import { addMonths, addMonthsToDate, lastDayOfMonth } from "@/lib/finance/dates";
 import { splitCents } from "@/lib/finance/money";
 
 /** Acceso a datos. Funciones chicas sobre Drizzle; la lógica de negocio vive en lib/finance. */
@@ -232,19 +232,82 @@ export async function billHistory(db: Db, provider: BillProvider) {
     .orderBy(asc(s.bills.billingPeriod));
 }
 
-export async function createBill(db: Db, b: BillInput & { rawExtractedJson?: unknown; sourceDocumentId?: string | null }) {
+export async function createBill(db: Db, b: Omit<BillInput, "recurring"> & { recurring?: boolean; rawExtractedJson?: unknown; sourceDocumentId?: string | null }) {
   const [row] = await db.insert(s.bills).values(b).returning();
   if (b.sourceDocumentId) await updateDocument(db, b.sourceDocumentId, { status: "confirmed" });
   return row;
 }
 
-export async function setBillPaid(db: Db, id: string, paid: boolean, paidAt: ISODate | null) {
+export async function updateBill(db: Db, id: string, patch: BillPatch) {
+  const [row] = await db.update(s.bills).set({ ...patch, updatedAt: new Date() }).where(eq(s.bills.id, id)).returning();
+  return row ?? null;
+}
+
+/** Borra la boleta y el pago que se haya registrado (la plata vuelve a la cuenta). */
+export async function deleteBill(db: Db, id: string) {
+  await db.delete(s.transactions).where(eq(s.transactions.billId, id));
+  const [row] = await db.delete(s.bills).where(eq(s.bills.id, id)).returning({ id: s.bills.id });
+  return row ?? null;
+}
+
+/**
+ * Marca una boleta como pagada: registra el pago como movimiento (sale de la cuenta elegida)
+ * y, si es un gasto fijo, deja creado el del mes siguiente con el mismo monto para ajustar.
+ * Al desmarcarla se borra ese movimiento.
+ */
+export async function setBillPaid(
+  db: Db,
+  id: string,
+  paid: boolean,
+  paidAt: ISODate,
+  opts: { accountId?: string | null; amountCents?: number } = {},
+) {
+  const [bill] = await db.select().from(s.bills).where(eq(s.bills.id, id));
+  if (!bill) return null;
+  await db.delete(s.transactions).where(eq(s.transactions.billId, id));
+  const amountCents = opts.amountCents ?? bill.amountCents;
   const [row] = await db
     .update(s.bills)
-    .set({ status: paid ? "paid" : "pending", paidAt: paid ? paidAt : null, updatedAt: new Date() })
+    .set({ status: paid ? "paid" : "pending", paidAt: paid ? paidAt : null, amountCents, updatedAt: new Date() })
     .where(eq(s.bills.id, id))
     .returning();
-  return row ?? null;
+  if (!paid) return row;
+
+  await db.insert(s.transactions).values({
+    date: paidAt,
+    amountCents,
+    category: "Servicios",
+    description: billName(bill),
+    accountId: opts.accountId ?? null,
+    paymentMethod: "debito",
+    billId: id,
+  });
+  if (bill.recurring) {
+    const nextPeriod = addMonths(bill.billingPeriod, 1);
+    const same = and(
+      eq(s.bills.provider, bill.provider),
+      bill.providerLabel ? eq(s.bills.providerLabel, bill.providerLabel) : sql`${s.bills.providerLabel} is null`,
+      eq(s.bills.billingPeriod, nextPeriod),
+    );
+    const [exists] = await db.select({ id: s.bills.id }).from(s.bills).where(same);
+    if (!exists) {
+      await db.insert(s.bills).values({
+        provider: bill.provider,
+        providerLabel: bill.providerLabel,
+        accountNumber: bill.accountNumber,
+        billingPeriod: nextPeriod,
+        dueDate: addMonthsToDate(bill.dueDate, 1),
+        amountCents,
+        recurring: true,
+      });
+    }
+  }
+  return row;
+}
+
+const PROVIDER_LABEL: Record<string, string> = { EDES: "EDES (luz)", CAMUZZI: "Camuzzi (gas)", BVC: "BVC (agua)", PERSONAL: "Personal" };
+function billName(b: { provider: string; providerLabel: string | null }) {
+  return b.provider === "OTRO" ? b.providerLabel || "Vencimiento" : PROVIDER_LABEL[b.provider] ?? b.provider;
 }
 
 // ─── Movimientos y cuotas ───────────────────────────────────────────────────
@@ -302,6 +365,45 @@ export async function listInstallments(db: Db, from: ISODate) {
     .innerJoin(s.transactions, eq(s.installments.transactionId, s.transactions.id))
     .where(gte(s.installments.dueDate, from))
     .orderBy(asc(s.installments.dueDate));
+}
+
+/** Edita un movimiento. Si era en cuotas y cambió el monto o la fecha, rehace las cuotas. */
+export async function updateTransaction(db: Db, id: string, patch: TransactionPatch) {
+  const [row] = await db.update(s.transactions).set({ ...patch, updatedAt: new Date() }).where(eq(s.transactions.id, id)).returning();
+  if (!row) return null;
+  if (row.billId && patch.amountCents) await db.update(s.bills).set({ amountCents: patch.amountCents, updatedAt: new Date() }).where(eq(s.bills.id, row.billId));
+  if (row.installmentsCount > 1 && (patch.amountCents || patch.date)) {
+    await db.delete(s.installments).where(eq(s.installments.transactionId, id));
+    const amounts = splitCents(row.amountCents, row.installmentsCount);
+    await db.insert(s.installments).values(
+      amounts.map((amountCents, i) => ({ transactionId: id, number: i + 1, total: row.installmentsCount, dueDate: addMonthsToDate(row.date, i + 1), amountCents })),
+    );
+  }
+  return row;
+}
+
+/** Borra un movimiento (y sus cuotas). Si era el pago de una boleta, la boleta vuelve a pendiente. */
+export async function deleteTransaction(db: Db, id: string) {
+  const [row] = await db.delete(s.transactions).where(eq(s.transactions.id, id)).returning();
+  if (row?.billId) await db.update(s.bills).set({ status: "pending", paidAt: null, updatedAt: new Date() }).where(eq(s.bills.id, row.billId));
+  return row ?? null;
+}
+
+/** Sueldos cobrados (los ingresos marcados como sueldo), del más nuevo al más viejo. */
+export async function listSalaryHistory(db: Db, limit = 24) {
+  return db
+    .select({
+      id: s.transactions.id,
+      period: s.transactions.salaryPeriod,
+      date: s.transactions.date,
+      amountCents: s.transactions.amountCents,
+      accountName: s.accounts.name,
+    })
+    .from(s.transactions)
+    .leftJoin(s.accounts, eq(s.transactions.accountId, s.accounts.id))
+    .where(sql`${s.transactions.salaryPeriod} is not null`)
+    .orderBy(desc(s.transactions.salaryPeriod), desc(s.transactions.date))
+    .limit(limit);
 }
 
 export async function setReimbursed(db: Db, id: string, reimbursedCents: number) {

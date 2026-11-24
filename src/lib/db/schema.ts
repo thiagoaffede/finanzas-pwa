@@ -90,6 +90,10 @@ export const transactions = pgTable(
     owedByName: text("owed_by_name"),
     owedCents: cents("owed_cents").notNull().default(0),
     reimbursedCents: cents("reimbursed_cents").notNull().default(0),
+    /** Pago de una boleta o vencimiento (no cuenta como gasto variable). */
+    billId: uuid("bill_id").references(() => bills.id, { onDelete: "set null" }),
+    /** Cobro de sueldo: mes trabajado (YYYY-MM). Arma el historial de sueldos. */
+    salaryPeriod: text("salary_period"),
     /** Para la cola offline: id generado en el cliente, evita duplicados al sincronizar. */
     clientId: text("client_id").unique(),
     ...timestamps,
@@ -129,6 +133,8 @@ export const bills = pgTable(
     amountCents: cents("amount_cents").notNull(),
     status: billStatusEnum("status").notNull().default("pending"),
     paidAt: date("paid_at"),
+    /** Gasto fijo que se repite todos los meses (gimnasio, cuota, etc.): al pagarlo se crea el del mes siguiente. */
+    recurring: boolean("recurring").notNull().default(false),
     sourceDocumentId: uuid("source_document_id").references(() => documents.id),
     rawExtractedJson: jsonb("raw_extracted_json"),
     ...timestamps,

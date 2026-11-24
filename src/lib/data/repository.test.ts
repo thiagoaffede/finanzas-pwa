@@ -64,6 +64,37 @@ describe("repositorio (PGlite)", () => {
     const [row] = await repo.listBills(db, { from: "2026-11-01" });
     expect(row.status).toBe("paid");
     expect(row.paidAt).toBe(TODAY);
+    // El pago queda como movimiento ligado a la boleta.
+    const tx = (await repo.listTransactions(db, { month: "2026-11" })).find((t) => t.billId === b.id);
+    expect(tx?.amountCents).toBe(45_000_00);
+  });
+
+  it("gasto fijo: pagarlo desde una cuenta crea el del mes siguiente y descuenta el saldo", async () => {
+    const acc = await repo.createAccount(db, { name: "Banco", kind: "banco", balanceCents: 100_000_00 });
+    const gym = await repo.createBill(db, { provider: "OTRO", providerLabel: "Gimnasio", billingPeriod: "2026-11", dueDate: "2026-11-10", amountCents: 30_000_00, status: "pending", recurring: true });
+    await repo.setBillPaid(db, gym.id, true, TODAY, { accountId: acc.id, amountCents: 32_000_00 });
+    const bills = await repo.listBills(db, { from: "2026-11-01" });
+    const next = bills.find((b) => b.providerLabel === "Gimnasio" && b.billingPeriod === "2026-12");
+    expect(next).toMatchObject({ dueDate: "2026-12-10", amountCents: 32_000_00, status: "pending", recurring: true });
+    expect((await repo.listAccounts(db)).find((a) => a.id === acc.id)?.balanceCents).toBe(68_000_00);
+    // Pagarlo dos veces no duplica el del mes siguiente; desmarcarlo devuelve la plata.
+    await repo.setBillPaid(db, gym.id, true, TODAY, { accountId: acc.id });
+    expect((await repo.listBills(db, { from: "2026-12-01" })).filter((b) => b.providerLabel === "Gimnasio")).toHaveLength(1);
+    await repo.setBillPaid(db, gym.id, false, TODAY);
+    expect((await repo.listAccounts(db)).find((a) => a.id === acc.id)?.balanceCents).toBe(100_000_00);
+    await repo.deleteBill(db, next!.id);
+    await repo.deleteBill(db, gym.id);
+    await repo.updateAccount(db, acc.id, { archived: true });
+  });
+
+  it("movimientos: editar y borrar", async () => {
+    const t = await repo.createTransaction(db, { date: TODAY, amountCents: 5_000_00, isIncome: false, paymentMethod: "debito", installmentsCount: 1, owedCents: 0, description: "Café" });
+    await repo.updateTransaction(db, t!.id, { amountCents: 6_000_00, description: "Café y medialunas" });
+    let row = (await repo.listTransactions(db, { month: "2026-11" })).find((x) => x.id === t!.id);
+    expect(row).toMatchObject({ amountCents: 6_000_00, description: "Café y medialunas" });
+    await repo.deleteTransaction(db, t!.id);
+    row = (await repo.listTransactions(db, { month: "2026-11" })).find((x) => x.id === t!.id);
+    expect(row).toBeUndefined();
   });
 
   it("índices: IPC por mes e ICL por día, con upsert", async () => {
@@ -107,7 +138,8 @@ describe("repositorio (PGlite)", () => {
     expect(ctx.demo).toBe(false);
     expect(ctx.netIncomeSource).toBe("estimado");
     expect(ctx.netIncomeCents).toBeGreaterThan(0);
-    expect(ctx.transactions).toHaveLength(1);
+    expect(ctx.transactions).toHaveLength(2); // el gasto en cuotas y el pago de la boleta
+    expect(ctx.transactions.filter((t) => !t.billId)).toHaveLength(1);
     expect(ctx.installments[0].label).toBe("Heladera (1/3)");
     expect(ctx.goals[0].savedCents).toBe(200_000_00);
 

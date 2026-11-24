@@ -1,16 +1,23 @@
-import { z } from "zod";
 import { json, parseBody } from "@/lib/api";
 import { requireDb } from "@/lib/api-db";
-import { setReimbursed } from "@/lib/data/repository";
+import { deleteTransaction, updateTransaction } from "@/lib/data/repository";
+import { transactionPatch } from "@/lib/schemas";
 
-const patch = z.object({ reimbursedCents: z.number().int().min(0) });
+type Ctx = { params: Promise<{ id: string }> };
 
-/** Marca cuánto te devolvieron de un gasto compartido. */
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const body = await parseBody(req, patch);
+/** Edita un movimiento (monto, fecha, detalle, categoría, cuenta o lo que te devolvieron). */
+export async function PATCH(req: Request, { params }: Ctx) {
+  const body = await parseBody(req, transactionPatch);
   if (!body.ok) return body.res;
   const { db, res } = requireDb();
   if (!db) return res;
-  const row = await setReimbursed(db, (await params).id, body.data.reimbursedCents);
+  const row = await updateTransaction(db, (await params).id, body.data);
   return row ? json(row) : json({ error: "No existe" }, { status: 404 });
+}
+
+export async function DELETE(_req: Request, { params }: Ctx) {
+  const { db, res } = requireDb();
+  if (!db) return res;
+  const row = await deleteTransaction(db, (await params).id);
+  return row ? json({ ok: true }) : json({ error: "No existe" }, { status: 404 });
 }

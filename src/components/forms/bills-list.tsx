@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check } from "lucide-react";
+import { Check, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { classifyDue, DUE_BUCKET_LABEL } from "@/lib/finance/deadlines";
@@ -44,6 +44,11 @@ export function BillsList({ bills, today, anomalies, canSave }: { bills: BillVie
               </div>
               <Badge tone={TONE[bucket]}>{DUE_BUCKET_LABEL[bucket]}</Badge>
               <span className="num w-24 text-right font-medium">{formatARS(b.amountCents)}</span>
+              {b.documentId && (
+                <a href={`/api/documents/${b.documentId}`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-xs text-accent hover:underline" title="Ver el original">
+                  <FileText className="h-3.5 w-3.5" /> Original
+                </a>
+              )}
               {canSave && (
                 <Button variant={b.paid ? "ghost" : "outline"} size="sm" disabled={busy === b.id} onClick={() => toggle(b)}>
                   {b.paid ? "Desmarcar" : (<><Check className="h-3.5 w-3.5" /> Pagada</>)}

@@ -15,6 +15,13 @@
       "when": 1795540430158,
       "tag": "0001_transaction_category",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795542893779,
+      "tag": "0002_files_push_accounts",
+      "breakpoints": true
     }
   ]
 }

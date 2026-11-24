@@ -46,6 +46,8 @@ export const accounts = pgTable("accounts", {
   kind: accountKindEnum("kind").notNull(),
   currency: currencyEnum("currency").notNull().default("ARS"),
   openingBalanceCents: cents("opening_balance_cents").notNull().default(0),
+  /** Momento en que se fijó el saldo inicial: cuentan los movimientos cargados después. */
+  balanceSetAt: timestamp("balance_set_at", { withTimezone: true }).defaultNow().notNull(),
   /** Tarjetas: día de cierre y de vencimiento del resumen. */
   closingDay: integer("closing_day"),
   dueDay: integer("due_day"),
@@ -234,6 +236,12 @@ export const documents = pgTable("documents", {
   kind: documentKindEnum("kind").notNull(),
   fileUrl: text("file_url"),
   mimeType: text("mime_type"),
+  fileName: text("file_name"),
+  sizeBytes: integer("size_bytes"),
+  /** Archivo original en base64 (PDF o foto comprimida, hasta ~4 MB). */
+  contentBase64: text("content_base64"),
+  /** Cómo se leyó: "ia", "texto" o "manual". */
+  method: text("method"),
   status: documentStatusEnum("status").notNull().default("uploaded"),
   extractedJson: jsonb("extracted_json"),
   error: text("error"),
@@ -260,4 +268,13 @@ export const settings = pgTable("settings", {
   key: text("key").primaryKey(),
   value: jsonb("value").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** Suscripciones Web Push (un registro por navegador/dispositivo). */
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  endpoint: text("endpoint").primaryKey(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  userAgent: text("user_agent"),
+  ...timestamps,
 });

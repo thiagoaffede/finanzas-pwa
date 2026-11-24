@@ -14,13 +14,13 @@ import type { TxView } from "@/lib/data/context";
 const METHOD: Record<string, string> = { contado: "Efectivo", debito: "Débito", tarjeta: "Tarjeta", cuotas: "Cuotas", transferencia: "Transf." };
 const fmtDate = (d: string) => d.slice(8, 10) + "/" + d.slice(5, 7);
 
-export function MovementsView({ transactions, canSave }: { transactions: TxView[]; canSave: boolean }) {
+export function MovementsView({ transactions, canSave, accounts = [] }: { transactions: TxView[]; canSave: boolean; accounts?: { id: string; name: string; kind: string }[] }) {
   const router = useRouter();
   const [local, setLocal] = useState<QueuedTransaction[]>([]);
   useEffect(() => queueMicrotask(() => setLocal(readQueue())), []);
 
   const rows = [
-    ...local.map((t) => ({
+    ...local.filter((t) => !t.isIncome).map((t) => ({
       id: t.clientId,
       date: t.date,
       description: t.description ?? "",
@@ -47,6 +47,7 @@ export function MovementsView({ transactions, canSave }: { transactions: TxView[
     <div className="space-y-4">
       <Suspense>
         <QuickExpense
+          accounts={accounts}
           onSynced={() => {
             setLocal(readQueue());
             router.refresh();

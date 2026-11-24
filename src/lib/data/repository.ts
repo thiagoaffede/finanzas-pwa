@@ -124,6 +124,7 @@ export interface PayslipRecord {
   netCents: number;
   lines?: PayLine[];
   rawExtractedJson?: unknown;
+  sourceDocumentId?: string | null;
 }
 
 export async function upsertPayslip(db: Db, p: PayslipRecord) {
@@ -137,12 +138,14 @@ export async function upsertPayslip(db: Db, p: PayslipRecord) {
     netCents: p.netCents,
     lines: p.lines ?? null,
     rawExtractedJson: p.rawExtractedJson ?? null,
+    sourceDocumentId: p.sourceDocumentId ?? null,
   };
   const [row] = await db
     .insert(s.payslips)
     .values(values)
     .onConflictDoUpdate({ target: s.payslips.period, set: { ...values, updatedAt: new Date() } })
     .returning();
+  if (p.sourceDocumentId) await updateDocument(db, p.sourceDocumentId, { status: "confirmed" });
   return row;
 }
 
@@ -226,8 +229,9 @@ export async function billHistory(db: Db, provider: BillProvider) {
     .orderBy(asc(s.bills.billingPeriod));
 }
 
-export async function createBill(db: Db, b: BillInput & { rawExtractedJson?: unknown }) {
+export async function createBill(db: Db, b: BillInput & { rawExtractedJson?: unknown; sourceDocumentId?: string | null }) {
   const [row] = await db.insert(s.bills).values(b).returning();
+  if (b.sourceDocumentId) await updateDocument(db, b.sourceDocumentId, { status: "confirmed" });
   return row;
 }
 
@@ -335,4 +339,122 @@ export async function quoteHistory(db: Db, house: string, since: Date) {
     .from(s.marketQuotes)
     .where(and(eq(s.marketQuotes.house, house), gte(s.marketQuotes.fetchedAt, since)))
     .orderBy(asc(s.marketQuotes.fetchedAt));
+}
+
+// ─── Documentos originales ──────────────────────────────────────────────────
+export async function createDocument(
+  db: Db,
+  d: { kind: "bill" | "payslip"; mimeType: string; fileName: string | null; data: Uint8Array },
+) {
+  const [row] = await db
+    .insert(s.documents)
+    .values({
+      kind: d.kind,
+      mimeType: d.mimeType,
+      fileName: d.fileName,
+      sizeBytes: d.data.byteLength,
+      contentBase64: Buffer.from(d.data).toString("base64"),
+    })
+    .returning({ id: s.documents.id });
+  return row.id;
+}
+
+export async function updateDocument(
+  db: Db,
+  id: string,
+  patch: { status?: "parsed" | "confirmed" | "failed"; extractedJson?: unknown; error?: string | null; method?: string },
+) {
+  await db.update(s.documents).set({ ...patch, updatedAt: new Date() }).where(eq(s.documents.id, id));
+}
+
+export async function getDocumentFile(db: Db, id: string) {
+  const [row] = await db
+    .select({ mimeType: s.documents.mimeType, fileName: s.documents.fileName, contentBase64: s.documents.contentBase64 })
+    .from(s.documents)
+    .where(eq(s.documents.id, id));
+  if (!row?.contentBase64) return null;
+  return { mimeType: row.mimeType ?? "application/octet-stream", fileName: row.fileName, data: Buffer.from(row.contentBase64, "base64") };
+}
+
+/** Borra un documento que no llegó a confirmarse (no toca boletas ni recibos ya guardados). */
+export async function deleteUnconfirmedDocument(db: Db, id: string) {
+  const [bill] = await db.select({ id: s.bills.id }).from(s.bills).where(eq(s.bills.sourceDocumentId, id)).limit(1);
+  const [slip] = await db.select({ id: s.payslips.id }).from(s.payslips).where(eq(s.payslips.sourceDocumentId, id)).limit(1);
+  if (bill || slip) return false;
+  await db.delete(s.documents).where(eq(s.documents.id, id));
+  return true;
+}
+
+// ─── Cuentas ────────────────────────────────────────────────────────────────
+export type AccountKind = (typeof s.accountKindEnum.enumValues)[number];
+
+export interface AccountView {
+  id: string;
+  name: string;
+  kind: AccountKind;
+  openingBalanceCents: number;
+  balanceSetAt: string;
+  /** Saldo actual: saldo fijado + ingresos − gastos cargados después. En tarjetas, negativo = deuda. */
+  balanceCents: number;
+}
+
+export async function listAccounts(db: Db): Promise<AccountView[]> {
+  const rows = await db.select().from(s.accounts).where(eq(s.accounts.archived, false)).orderBy(asc(s.accounts.createdAt));
+  if (rows.length === 0) return [];
+  const moves = await db
+    .select({
+      accountId: s.transactions.accountId,
+      // Ingresos suman; gastos restan; lo que te devolvieron vuelve a la cuenta.
+      delta: sql<string>`coalesce(sum(case when ${s.transactions.isIncome} then ${s.transactions.amountCents} else ${s.transactions.reimbursedCents} - ${s.transactions.amountCents} end), 0)`,
+    })
+    .from(s.transactions)
+    .innerJoin(s.accounts, eq(s.transactions.accountId, s.accounts.id))
+    .where(sql`${s.transactions.createdAt} > ${s.accounts.balanceSetAt}`)
+    .groupBy(s.transactions.accountId);
+  const delta = new Map(moves.map((m) => [m.accountId, Number(m.delta)]));
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    kind: r.kind,
+    openingBalanceCents: r.openingBalanceCents,
+    balanceSetAt: r.balanceSetAt.toISOString(),
+    balanceCents: r.openingBalanceCents + (delta.get(r.id) ?? 0),
+  }));
+}
+
+export async function createAccount(db: Db, a: { name: string; kind: AccountKind; balanceCents: number }) {
+  const [row] = await db.insert(s.accounts).values({ name: a.name, kind: a.kind, openingBalanceCents: a.balanceCents, balanceSetAt: new Date() }).returning();
+  return row;
+}
+
+/** Fija el saldo actual (lo que ves en el banco hoy). Los movimientos anteriores dejan de contar. */
+export async function setAccountBalance(db: Db, id: string, balanceCents: number) {
+  const now = new Date();
+  const [row] = await db
+    .update(s.accounts)
+    .set({ openingBalanceCents: balanceCents, balanceSetAt: now, updatedAt: now })
+    .where(eq(s.accounts.id, id))
+    .returning();
+  return row ?? null;
+}
+
+export async function updateAccount(db: Db, id: string, patch: { name?: string; archived?: boolean }) {
+  const [row] = await db.update(s.accounts).set({ ...patch, updatedAt: new Date() }).where(eq(s.accounts.id, id)).returning();
+  return row ?? null;
+}
+
+// ─── Avisos push ────────────────────────────────────────────────────────────
+export async function savePushSubscription(db: Db, sub: { endpoint: string; p256dh: string; auth: string; userAgent?: string | null }) {
+  await db
+    .insert(s.pushSubscriptions)
+    .values(sub)
+    .onConflictDoUpdate({ target: s.pushSubscriptions.endpoint, set: { p256dh: sub.p256dh, auth: sub.auth, updatedAt: new Date() } });
+}
+
+export async function deletePushSubscription(db: Db, endpoint: string) {
+  await db.delete(s.pushSubscriptions).where(eq(s.pushSubscriptions.endpoint, endpoint));
+}
+
+export async function listPushSubscriptions(db: Db) {
+  return db.select().from(s.pushSubscriptions);
 }

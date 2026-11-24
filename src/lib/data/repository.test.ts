@@ -128,4 +128,55 @@ describe("repositorio (PGlite)", () => {
     await repo.saveSettings(db, { ...(await repo.getSettings(db)), netIncomeCents: null });
     expect((await loadFromDb(db, TODAY)).netIncomeSource).toBe("estimado");
   });
+
+  it("cuentas: saldo se mueve con gastos, ingresos y reintegros posteriores", async () => {
+    const acc = await repo.createAccount(db, { name: "Banco", kind: "banco", balanceCents: 500_000_00 });
+    await repo.createAccount(db, { name: "Visa", kind: "tarjeta", balanceCents: -20_000_00 });
+    await new Promise((r) => setTimeout(r, 5));
+    const base = { isIncome: false, paymentMethod: "debito" as const, installmentsCount: 1, owedCents: 0, accountId: acc.id };
+    const gasto = await repo.createTransaction(db, { ...base, date: TODAY, amountCents: 30_000_00, clientId: "acc-1" });
+    await repo.createTransaction(db, { ...base, date: TODAY, amountCents: 100_000_00, isIncome: true, clientId: "acc-2" });
+    await repo.setReimbursed(db, gasto!.id, 10_000_00);
+    const [banco, visa] = await repo.listAccounts(db);
+    expect(banco.balanceCents).toBe(580_000_00);
+    expect(visa.balanceCents).toBe(-20_000_00);
+
+    // Ajustar al saldo real: lo anterior deja de contar.
+    await repo.setAccountBalance(db, acc.id, 600_000_00);
+    const [ajustado] = await repo.listAccounts(db);
+    expect(ajustado.balanceCents).toBe(600_000_00);
+
+    // El flujo de caja arranca del total de cuentas (sin tarjetas).
+    const ctx = await loadFromDb(db, TODAY);
+    expect(buildDashboard(ctx).cashflow.months[0].openingCents).toBe(600_000_00);
+  });
+
+  it("documentos: guarda el original, lo devuelve y se vincula al confirmar", async () => {
+    const data = new TextEncoder().encode("%PDF-1.4 prueba");
+    const id = await repo.createDocument(db, { kind: "bill", mimeType: "application/pdf", fileName: "luz.pdf", data });
+    const file = await repo.getDocumentFile(db, id);
+    expect(file?.mimeType).toBe("application/pdf");
+    expect(new TextDecoder().decode(file!.data)).toBe("%PDF-1.4 prueba");
+
+    await repo.createBill(db, { provider: "CAMUZZI", billingPeriod: "2026-11", dueDate: "2026-11-30", amountCents: 1_000_00, status: "pending", sourceDocumentId: id });
+    expect(await repo.deleteUnconfirmedDocument(db, id)).toBe(false);
+    const ctx = await loadFromDb(db, TODAY);
+    expect(ctx.bills.find((b) => b.provider === "CAMUZZI")?.documentId).toBe(id);
+
+    const orphan = await repo.createDocument(db, { kind: "bill", mimeType: "image/jpeg", fileName: null, data });
+    expect(await repo.deleteUnconfirmedDocument(db, orphan)).toBe(true);
+    expect(await repo.getDocumentFile(db, orphan)).toBeNull();
+  });
+
+  it("suscripciones push: alta idempotente y baja", async () => {
+    const sub = { endpoint: "https://push.example/abc", p256dh: "k1", auth: "a1" };
+    await repo.savePushSubscription(db, sub);
+    await repo.savePushSubscription(db, { ...sub, p256dh: "k2" });
+    let subs = await repo.listPushSubscriptions(db);
+    expect(subs).toHaveLength(1);
+    expect(subs[0].p256dh).toBe("k2");
+    await repo.deletePushSubscription(db, sub.endpoint);
+    subs = await repo.listPushSubscriptions(db);
+    expect(subs).toHaveLength(0);
+  });
 });

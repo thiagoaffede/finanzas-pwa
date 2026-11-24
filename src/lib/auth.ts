@@ -68,6 +68,8 @@ export function isPublicPath(pathname: string): boolean {
     pathname === "/login" ||
     pathname.startsWith("/api/auth/") ||
     pathname === "/api/health" ||
+    // El cron se autentica con CRON_SECRET (ver la ruta), no con la cookie.
+    pathname.startsWith("/api/cron/") ||
     pathname === "/manifest.webmanifest" ||
     pathname === "/sw.js" ||
     pathname.startsWith("/icons/") ||

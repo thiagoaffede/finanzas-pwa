@@ -5,6 +5,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { DemoNotice } from "@/components/dashboard/demo-notice";
 import { IndicesManager, LogoutButton, PayrollProfileForm, ScalesManager, SettingsForm } from "@/components/forms/settings-forms";
 import { loadFinanceContext } from "@/lib/data/context";
+import { PushToggle } from "@/components/forms/push-toggle";
 import { authEnabled } from "@/lib/auth";
 import { todayAR } from "@/lib/finance";
 
@@ -20,7 +21,8 @@ export default async function ConfiguracionPage() {
       <PageHeader title="Configuración" description="Supuestos de inflación, saldo, tu puesto, escalas del convenio e índices del alquiler." />
       {ctx.demo && <DemoNotice />}
 
-      <SettingsForm initial={ctx.settings} canSave={canSave} />
+      <PushToggle canSave={canSave} />
+      <SettingsForm initial={ctx.settings} canSave={canSave} usesAccounts={ctx.accounts.some((a) => a.kind !== "tarjeta")} />
       <PayrollProfileForm initial={ctx.profile} canSave={canSave} />
       <ScalesManager scales={ctx.scales} canSave={canSave} defaultCategory={ctx.profile?.category} />
       <IndicesManager indices={ctx.indices} canSave={canSave} />

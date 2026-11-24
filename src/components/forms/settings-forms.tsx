@@ -43,7 +43,7 @@ const NoDb = ({ canSave }: { canSave: boolean }) => (canSave ? null : <span clas
 
 /* ───────────── Ajustes generales ───────────── */
 
-export function SettingsForm({ initial, canSave }: { initial: AppSettings; canSave: boolean }) {
+export function SettingsForm({ initial, canSave, usesAccounts = false }: { initial: AppSettings; canSave: boolean; usesAccounts?: boolean }) {
   const [v, setV] = useState(initial);
   const [manualIncome, setManualIncome] = useState(initial.netIncomeCents !== null);
   const { busy, msg, run } = useSave();
@@ -64,9 +64,17 @@ export function SettingsForm({ initial, canSave }: { initial: AppSettings; canSa
         <Field label="Rendimiento alternativo mensual" hint="Plazo fijo o FCI: costo de oportunidad de pagar de contado.">
           <PctInput value={v.monthlyAlternativeRate} onChange={(r) => set("monthlyAlternativeRate", r)} />
         </Field>
-        <Field label="Saldo actual" hint="Lo que tenés hoy en cuentas y efectivo.">
-          <MoneyInput valueCents={v.openingBalanceCents} onChange={(c) => set("openingBalanceCents", c)} />
-        </Field>
+        {usesAccounts ? (
+          <Field label="Saldo actual" hint="Se calcula con tus cuentas (Movimientos → Cuentas).">
+            <a href="/movimientos#cuentas" className="flex h-10 items-center text-sm text-accent hover:underline">
+              Ver cuentas
+            </a>
+          </Field>
+        ) : (
+          <Field label="Saldo actual" hint="Lo que tenés hoy en cuentas y efectivo. O cargá tus cuentas en Movimientos.">
+            <MoneyInput valueCents={v.openingBalanceCents} onChange={(c) => set("openingBalanceCents", c)} />
+          </Field>
+        )}
         <Field label="Saldo mínimo deseado" hint="El flujo de caja avisa si un mes queda por debajo.">
           <MoneyInput valueCents={v.minBalanceCents} onChange={(c) => set("minBalanceCents", c)} />
         </Field>

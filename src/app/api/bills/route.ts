@@ -18,7 +18,7 @@ export async function GET() {
   return json({ demo: false, items: rows.map((b) => ({ ...b, bucket: classifyDue(b.dueDate, today, b.status === "paid") })) });
 }
 
-const createInput = billInput.extend({ rawExtractedJson: z.unknown().optional() });
+const createInput = billInput.extend({ rawExtractedJson: z.unknown().optional(), sourceDocumentId: z.string().uuid().nullish() });
 
 export async function POST(req: Request) {
   const body = await parseBody(req, createInput);

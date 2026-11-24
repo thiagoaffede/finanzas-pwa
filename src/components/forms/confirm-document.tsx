@@ -23,7 +23,7 @@ export interface BillDraft {
   amountCents: number;
 }
 
-export function ConfirmBill({ draft, raw, onDone, onCancel }: { draft: Partial<BillDraft>; raw?: unknown; onDone: () => void; onCancel: () => void }) {
+export function ConfirmBill({ draft, raw, documentId, onDone, onCancel }: { draft: Partial<BillDraft>; raw?: unknown; documentId?: string | null; onDone: () => void; onCancel: () => void }) {
   const [b, setB] = useState<BillDraft>({
     provider: draft.provider ?? "OTRO",
     providerLabel: draft.providerLabel ?? null,
@@ -40,7 +40,7 @@ export function ConfirmBill({ draft, raw, onDone, onCancel }: { draft: Partial<B
 
   async function save() {
     setSaving(true);
-    const r = await send("/api/bills", "POST", { ...b, status: "pending", rawExtractedJson: raw });
+    const r = await send("/api/bills", "POST", { ...b, status: "pending", rawExtractedJson: raw, sourceDocumentId: documentId ?? null });
     setSaving(false);
     if (r.ok) onDone();
     else setError(r.error);
@@ -94,7 +94,7 @@ export interface PayslipDraft {
 
 const sumType = (lines: PayLine[], t: PayLine["type"]) => lines.filter((l) => l.type === t).reduce((s, l) => s + l.amountCents, 0);
 
-export function ConfirmPayslip({ draft, raw, onDone, onCancel }: { draft: Partial<PayslipDraft>; raw?: unknown; onDone: () => void; onCancel: () => void }) {
+export function ConfirmPayslip({ draft, raw, documentId, onDone, onCancel }: { draft: Partial<PayslipDraft>; raw?: unknown; documentId?: string | null; onDone: () => void; onCancel: () => void }) {
   const [period, setPeriod] = useState(draft.period ?? "");
   const [lines, setLines] = useState<PayLine[]>(draft.lines?.length ? draft.lines : [{ code: "", label: "Sueldo básico", type: "rem", amountCents: 0 }]);
   const [net, setNet] = useState(draft.netCents ?? 0);
@@ -120,6 +120,7 @@ export function ConfirmPayslip({ draft, raw, onDone, onCancel }: { draft: Partia
       netCents: net,
       lines,
       rawExtractedJson: raw,
+      sourceDocumentId: documentId ?? null,
     });
     setSaving(false);
     if (r.ok) onDone();

@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MovementsView } from "@/components/forms/movements-view";
+import { AccountsManager } from "@/components/forms/accounts-manager";
 import { BillsList } from "@/components/forms/bills-list";
 import { DocumentUpload } from "@/components/forms/document-upload";
 import { DemoNotice } from "@/components/dashboard/demo-notice";
@@ -35,7 +36,8 @@ export default async function MovimientosPage() {
         </div>
       </PageHeader>
       {ctx.demo && <DemoNotice />}
-      <MovementsView transactions={ctx.transactions} canSave={!ctx.demo} />
+      <MovementsView transactions={ctx.transactions} canSave={!ctx.demo} accounts={ctx.accounts.map(({ id, name, kind }) => ({ id, name, kind }))} />
+      <AccountsManager accounts={ctx.accounts} canSave={!ctx.demo} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">

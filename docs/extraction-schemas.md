@@ -4,15 +4,20 @@ Cómo funciona la lectura automática de PDFs y fotos:
 
 1. La PWA sube el archivo a `POST /api/documents/parse` (multipart: `file`, `kind` = `bill` | `payslip`).
    Formatos: PDF, JPG, PNG, GIF y WEBP.
-2. El server lo manda a Claude (`src/lib/extraction/claude-extractor.ts`, modelo en `EXTRACTION_MODEL`)
-   con salida estructurada: el modelo solo puede devolver JSON que cumpla el schema de abajo.
-3. `bill-parser.ts` / `payslip-parser.ts` normalizan montos (`"1.234,56"` → centavos), fechas
+2. El server guarda el original en `documents` (base64, hasta 4 MB; las fotos se achican en el celu).
+3. Lo lee de una de dos formas:
+   - **Con IA** (si hay `ANTHROPIC_API_KEY`): Claude con salida estructurada (`src/lib/extraction/claude-extractor.ts`).
+   - **Gratis** (sin key): saca el texto del PDF con `unpdf` y busca etiquetas habituales
+     ("Total a pagar", "1º Vencimiento", "Período", "Neto a cobrar", …) en `src/lib/parsers/text-extraction.ts`.
+     Funciona con PDFs digitales (los que manda la empresa); no con fotos ni PDFs escaneados, que se
+     completan a mano con el original guardado.
+4. `bill-parser.ts` / `payslip-parser.ts` normalizan montos (`"1.234,56"` → centavos), fechas
    (`dd/mm/aaaa` → ISO), períodos (`"Noviembre 2026"` → `2026-11`) y detectan el proveedor.
-4. La PWA muestra una **pantalla de confirmación** editable con advertencias; recién al confirmar
+5. La PWA muestra una **pantalla de confirmación** editable con advertencias; recién al confirmar
    se guarda la boleta (con el JSON extraído en `raw_extracted_json`) o el recibo.
 
-El archivo original no se guarda: solo los datos confirmados. Sin `ANTHROPIC_API_KEY` la ruta
-responde 501 y se puede cargar todo a mano. También acepta `application/json`
+Si se cancela la revisión, el original se borra. El original de cada boleta o recibo confirmado se ve
+con el link "Original" (`GET /api/documents/[id]`). También acepta `application/json`
 `{ "kind": "bill" | "payslip", "extraction": { … } }` para normalizar una extracción hecha afuera.
 
 ## Reglas para el modelo

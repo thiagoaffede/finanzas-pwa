@@ -21,6 +21,8 @@ export interface BillView {
   dueDate: ISODate;
   amountCents: number;
   paid: boolean;
+  /** Archivo original guardado (PDF o foto). */
+  documentId?: string | null;
 }
 
 export interface TxView {
@@ -61,7 +63,7 @@ export interface FinanceContext {
   settings: repo.AppSettings;
   scales: ScaleEntry[];
   profile: repo.PayrollProfile | null;
-  payslips: PayslipTotals[];
+  payslips: (PayslipTotals & { documentId?: string | null })[];
   rent: (RentContract & { dueDay: number }) | null;
   indices: IndexData;
   bills: BillView[];
@@ -69,6 +71,7 @@ export interface FinanceContext {
   transactions: TxView[];
   installments: InstallmentView[];
   goals: GoalView[];
+  accounts: repo.AccountView[];
   /** Gasto variable mensual promedio (para proyectar). */
   avgVariableSpendCents: number;
   netIncomeCents: number;
@@ -78,6 +81,13 @@ export interface FinanceContext {
 /** Gastos que no son "variables del día a día": se pagan como cuota o resumen. */
 export function isVariableSpend(t: { paymentMethod: PaymentMethod }) {
   return t.paymentMethod !== "cuotas" && t.paymentMethod !== "tarjeta";
+}
+
+/** Plata disponible hoy: suma de cuentas (sin tarjetas) si las cargaste; si no, el saldo de Configuración. */
+export function availableBalance(ctx: Pick<FinanceContext, "accounts" | "settings">): { cents: number; source: "cuentas" | "configuracion" } {
+  const cash = ctx.accounts.filter((a) => a.kind !== "tarjeta");
+  if (cash.length) return { cents: cash.reduce((s, a) => s + a.balanceCents, 0), source: "cuentas" };
+  return { cents: ctx.settings.openingBalanceCents, source: "configuracion" };
 }
 
 export function seniorityYears(hireDate: ISODate, today: ISODate): number {
@@ -117,7 +127,7 @@ export async function loadFinanceContext(today: ISODate): Promise<FinanceContext
 
 export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext> {
   const month = monthOf(today);
-  const [settings, scales, profile, payslipRows, rent, indices, billRows, txRows, inst, goalRows, prevTx] = await Promise.all([
+  const [settings, scales, profile, payslipRows, rent, indices, billRows, txRows, inst, goalRows, prevTx, accounts] = await Promise.all([
     repo.getSettings(db),
     repo.listScales(db),
     repo.getPayrollProfile(db),
@@ -129,14 +139,16 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     repo.listInstallments(db, `${month}-01`),
     repo.listGoals(db),
     repo.listTransactions(db, { from: `${addMonths(month, -3)}-01`, to: lastDayOfMonth(addMonths(month, -1)) }),
+    repo.listAccounts(db),
   ]);
 
-  const payslips: PayslipTotals[] = payslipRows.map((p) => ({
+  const payslips: FinanceContext["payslips"] = payslipRows.map((p) => ({
     period: p.period,
     remunerativeCents: p.remunerativeCents,
     nonRemunerativeCents: p.nonRemunerativeCents,
     deductionsCents: p.deductionsCents,
     netCents: p.netCents,
+    documentId: p.sourceDocumentId,
   }));
 
   const allBills: BillView[] = billRows.map((b) => ({
@@ -146,6 +158,7 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     dueDate: b.dueDate,
     amountCents: b.amountCents,
     paid: b.status === "paid",
+    documentId: b.sourceDocumentId,
   }));
   const billHistory: FinanceContext["billHistory"] = {};
   for (const b of allBills) (billHistory[b.provider] ??= []).push({ period: b.period, amountCents: b.amountCents });
@@ -201,6 +214,7 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
       monthlyContributionCents: g.monthlyContributionCents ?? 0,
       targetDate: g.targetDate,
     })),
+    accounts,
     avgVariableSpendCents,
     netIncomeCents: income.cents,
     netIncomeSource: income.source,
@@ -251,6 +265,7 @@ export function loadDemo(today: ISODate): FinanceContext {
       .filter((i) => i.month >= month)
       .map((i) => ({ month: i.month, dueDate: `${i.month}-22`, label: i.label, amountCents: i.amountCents })),
     goals: demo.demoGoals().map((g) => ({ ...g, targetDate: null })),
+    accounts: [],
     avgVariableSpendCents: 33_000_000,
     netIncomeCents: demo.DEMO_NET_INCOME_CENTS,
     netIncomeSource: "ejemplo",

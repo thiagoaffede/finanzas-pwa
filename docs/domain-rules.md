@@ -67,6 +67,19 @@ acuerdo dice que una suma no remunerativa no lleva ciertos aportes). Se pisan de
 descuentos y neto, y marca diferencias mayores a 1 %. Sirve para detectar aumentos que no se
 aplicaron o conceptos nuevos en el recibo.
 
+## Cobro, sueldo proporcional y aguinaldo (`payroll-calendar.ts`)
+
+- El sueldo de un mes se cobra el mes siguiente, el N.º día hábil (Configuración → Día de cobro, por
+  defecto el 3.º). El día de cobro todavía cuenta como pendiente (se deposita por la tarde).
+- Días hábiles: lunes a viernes sin feriados fijos (1/1, 24/3, 2/4, 1/5, 25/5, 20/6, 9/7, 8/12, 25/12),
+  Carnaval ni Viernes Santo. Los feriados trasladables no se consideran.
+- Primer sueldo: si la fecha de ingreso cae a mitad de mes, se cobra `sueldo / 30 × días trabajados`
+  (mes comercial de 30 días; ej. ingreso el 18 → 13 días).
+- Aguinaldo (SAC): mitad del sueldo, proporcional a los días trabajados del semestre
+  (`sueldo / 2 × días trabajados / días del semestre`). Se toma el 30/6 y el 18/12 como fecha de cobro.
+  Es una **estimación sobre el neto**: el SAC real se calcula sobre la mejor remuneración bruta del
+  semestre y tiene sus propios descuentos.
+
 ## Alquiler (`rent-adjustment.ts`)
 
 Contrato: `start_date`, `base_rent_cents`, `adjustment_interval_months`, `index_type`

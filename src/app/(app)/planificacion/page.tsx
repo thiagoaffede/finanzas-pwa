@@ -8,7 +8,7 @@ import { GoalContribution, NewGoalForm } from "@/components/forms/goals-manager"
 import { monthLabel, PROVIDER_NAME } from "@/lib/labels";
 import { DemoNotice } from "@/components/dashboard/demo-notice";
 import { buildCashflowInput, buildDashboard } from "@/lib/dashboard";
-import { loadFinanceContext, type FinanceContext } from "@/lib/data/context";
+import { availableBalance, loadFinanceContext, type FinanceContext } from "@/lib/data/context";
 import { addMonths, formatARS, formatPct, planGoal, priceVsInflation, todayAR } from "@/lib/finance";
 
 export const metadata: Metadata = { title: "Objetivos y planificación" };
@@ -138,8 +138,8 @@ export default async function PlanificacionPage() {
             </tbody>
           </table>
         </div>
-        {!ctx.demo && ctx.settings.openingBalanceCents === 0 && (
-          <p className="mt-3 text-xs text-ink-3">El saldo arranca en $ 0. Cargá tu saldo actual en Configuración para una proyección real.</p>
+        {!ctx.demo && availableBalance(ctx).cents === 0 && (
+          <p className="mt-3 text-xs text-ink-3">El saldo arranca en $ 0. Cargá tus cuentas en Movimientos (o el saldo en Configuración) para una proyección real.</p>
         )}
       </Card>
 

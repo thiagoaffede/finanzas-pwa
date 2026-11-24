@@ -43,7 +43,7 @@ const NoDb = ({ canSave }: { canSave: boolean }) => (canSave ? null : <span clas
 
 /* ───────────── Ajustes generales ───────────── */
 
-export function SettingsForm({ initial, canSave }: { initial: AppSettings; canSave: boolean }) {
+export function SettingsForm({ initial, canSave, usesAccounts = false }: { initial: AppSettings; canSave: boolean; usesAccounts?: boolean }) {
   const [v, setV] = useState(initial);
   const [manualIncome, setManualIncome] = useState(initial.netIncomeCents !== null);
   const { busy, msg, run } = useSave();
@@ -64,11 +64,28 @@ export function SettingsForm({ initial, canSave }: { initial: AppSettings; canSa
         <Field label="Rendimiento alternativo mensual" hint="Plazo fijo o FCI: costo de oportunidad de pagar de contado.">
           <PctInput value={v.monthlyAlternativeRate} onChange={(r) => set("monthlyAlternativeRate", r)} />
         </Field>
-        <Field label="Saldo actual" hint="Lo que tenés hoy en cuentas y efectivo.">
-          <MoneyInput valueCents={v.openingBalanceCents} onChange={(c) => set("openingBalanceCents", c)} />
-        </Field>
+        {usesAccounts ? (
+          <Field label="Saldo actual" hint="Se calcula con tus cuentas (Movimientos → Cuentas).">
+            <a href="/movimientos#cuentas" className="flex h-10 items-center text-sm text-accent hover:underline">
+              Ver cuentas
+            </a>
+          </Field>
+        ) : (
+          <Field label="Saldo actual" hint="Lo que tenés hoy en cuentas y efectivo. O cargá tus cuentas en Movimientos.">
+            <MoneyInput valueCents={v.openingBalanceCents} onChange={(c) => set("openingBalanceCents", c)} />
+          </Field>
+        )}
         <Field label="Saldo mínimo deseado" hint="El flujo de caja avisa si un mes queda por debajo.">
           <MoneyInput valueCents={v.minBalanceCents} onChange={(c) => set("minBalanceCents", c)} />
+        </Field>
+        <Field label="Día de cobro" hint="Día hábil del mes en que te depositan el sueldo (sin fines de semana ni feriados).">
+          <Select value={v.paydayBusinessDay} onChange={(e) => set("paydayBusinessDay", Number(e.target.value))}>
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+              <option key={n} value={n}>
+                {n}.º día hábil
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Colchón mensual" hint="Se descuenta de lo que podés gastar.">
           <MoneyInput valueCents={v.bufferCents} onChange={(c) => set("bufferCents", c)} />
@@ -112,7 +129,9 @@ export function PayrollProfileForm({ initial, canSave }: { initial: PayrollProfi
       <CardHeader>
         <div>
           <CardTitle>Tu puesto</CardTitle>
-          <CardDescription>Para estimar el sueldo con la escala vigente (antigüedad según fecha de ingreso).</CardDescription>
+          <CardDescription>
+            Para estimar el sueldo con la escala vigente. La fecha de ingreso define la antigüedad, el primer sueldo proporcional y el aguinaldo.
+          </CardDescription>
         </div>
       </CardHeader>
       <div className="grid gap-4 sm:grid-cols-3">

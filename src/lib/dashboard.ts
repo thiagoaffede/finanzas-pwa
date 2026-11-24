@@ -10,11 +10,13 @@ import {
   projectCashflow,
   rentAt,
   rentByMonth,
+  sacPayment,
+  salaryPayment,
   toISODate,
   type CashflowInput,
   type DueItem,
 } from "@/lib/finance";
-import { isVariableSpend, type FinanceContext } from "@/lib/data/context";
+import { availableBalance, isVariableSpend, type FinanceContext } from "@/lib/data/context";
 import { monthLabel, PROVIDER_NAME } from "@/lib/labels";
 
 /** Arma los números del tablero a partir del contexto (base real o datos de ejemplo). */
@@ -70,35 +72,76 @@ function latestBillsTotal(ctx: FinanceContext): number {
   return [...latest.values()].reduce((s, b) => s + b.amountCents, 0);
 }
 
+/** Datos para el calendario de cobro (día hábil de pago y fecha de ingreso). */
+export function payrollInput(ctx: FinanceContext) {
+  return { monthlyNetCents: ctx.netIncomeCents, hireDate: ctx.profile?.hireDate ?? null, paydayBusinessDay: ctx.settings.paydayBusinessDay };
+}
+
+/** Próximo cobro de sueldo (y aguinaldo si cae antes del siguiente sueldo). */
+export function nextIncome(ctx: FinanceContext) {
+  const pay = payrollInput(ctx);
+  // El cobro es por la tarde: el mismo día todavía cuenta como pendiente.
+  let salary = salaryPayment(ctx.month, pay);
+  if (ctx.today > salary.date || salary.amountCents === 0) salary = salaryPayment(addMonths(ctx.month, 1), pay);
+  const sac = [ctx.month, addMonths(ctx.month, 1)].map((m) => sacPayment(m, pay)).find((x) => x && x.date >= ctx.today) ?? null;
+  return { salary, sac, prorated: salary.days < 30 };
+}
+
+/**
+ * Entrada del flujo de caja. El saldo inicial es lo que tenés HOY, así que el mes en curso
+ * solo suma lo que falta: boletas impagas, el resto del gasto variable, el alquiler si no venció,
+ * las cuotas del mes y el sueldo si todavía no lo cobraste. Desde el mes que viene, todo completo.
+ */
 export function buildCashflowInput(ctx: FinanceContext, months = 6): CashflowInput {
   const window = monthRange(ctx.month, months);
+  const next = addMonths(ctx.month, 1);
   const infl = ctx.settings.monthlyInflation;
+  const grow = (c: number) => Math.round(c * (1 + infl));
+  const pay = payrollInput(ctx);
   const spentThisMonth = ctx.transactions.filter(isVariableSpend).reduce((s, t) => s + t.amountCents - t.owedCents, 0);
   const variable = Math.max(ctx.avgVariableSpendCents, spentThisMonth);
   const services = latestBillsTotal(ctx);
-  const rent = ctx.rent ? rentByMonth(ctx.rent, ctx.indices, window, rentOptions(ctx)) : new Map();
+  const rent = ctx.rent ? rentByMonth(ctx.rent, ctx.indices, window, rentOptions(ctx)) : new Map<string, number>();
+  const goals = ctx.goals.filter((g) => g.monthlyContributionCents > 0 && g.savedCents < g.targetCents);
+  const rentDue = ctx.rent ? dayOfMonth(ctx.month, ctx.rent.dueDay) : null;
+  const unpaidBills = ctx.bills.filter((b) => !b.paid && b.dueDate.slice(0, 7) <= ctx.month).reduce((s, b) => s + b.amountCents, 0);
+  const out = (kind: "bill" | "expense" | "goal" | "rent" | "installment", label: string, amountCents: number, month = ctx.month) =>
+    ({ month, kind, direction: "out" as const, label, amountCents });
+
+  // Mes en curso: solo lo pendiente.
+  const thisMonth = [
+    ...(unpaidBills ? [out("bill", "Boletas impagas", unpaidBills)] : []),
+    ...(variable > spentThisMonth ? [out("expense", "Gastos variables (resto del mes)", variable - spentThisMonth)] : []),
+    ...goals.map((g) => out("goal", g.name, g.monthlyContributionCents)),
+    ...(rentDue && ctx.today <= rentDue && rent.get(ctx.month) ? [out("rent", "Alquiler", rent.get(ctx.month)!)] : []),
+  ];
 
   return {
     startMonth: ctx.month,
     months,
-    openingBalanceCents: ctx.settings.openingBalanceCents,
+    openingBalanceCents: availableBalance(ctx).cents,
     minBalanceCents: ctx.settings.minBalanceCents,
     recurring: [
-      { kind: "income", direction: "in", label: "Sueldo", amountCents: ctx.netIncomeCents, fromMonth: ctx.month },
-      ...(services ? [{ kind: "bill" as const, direction: "out" as const, label: "Servicios", amountCents: services, fromMonth: ctx.month, monthlyGrowth: infl, indexed: true }] : []),
-      ...(variable ? [{ kind: "expense" as const, direction: "out" as const, label: "Gastos variables", amountCents: variable, fromMonth: ctx.month, monthlyGrowth: infl, indexed: true }] : []),
-      ...ctx.goals
-        .filter((g) => g.monthlyContributionCents > 0 && g.savedCents < g.targetCents)
-        .map((g) => ({ kind: "goal" as const, direction: "out" as const, label: g.name, amountCents: g.monthlyContributionCents, fromMonth: ctx.month })),
+      ...(services ? [{ kind: "bill" as const, direction: "out" as const, label: "Servicios", amountCents: grow(services), fromMonth: next, monthlyGrowth: infl, indexed: true }] : []),
+      ...(variable ? [{ kind: "expense" as const, direction: "out" as const, label: "Gastos variables", amountCents: grow(variable), fromMonth: next, monthlyGrowth: infl, indexed: true }] : []),
+      ...goals.map((g) => ({ kind: "goal" as const, direction: "out" as const, label: g.name, amountCents: g.monthlyContributionCents, fromMonth: next })),
     ],
     installmentPlans: [],
     oneOff: [
-      ...ctx.installments.map((i) => ({ month: i.month, kind: "installment" as const, direction: "out" as const, label: i.label, amountCents: i.amountCents })),
-      ...[...rent.entries()].map(([month, amountCents]) => ({ month, kind: "rent" as const, direction: "out" as const, label: "Alquiler", amountCents })),
-      // Aguinaldo (SAC) estimado: medio sueldo neto en junio y diciembre.
+      ...thisMonth,
+      ...ctx.installments.map((i) => out("installment", i.label, i.amountCents, i.month)),
+      ...[...rent.entries()].filter(([month]) => month > ctx.month).map(([month, amountCents]) => out("rent", "Alquiler", amountCents, month)),
+      // Sueldo: entra el N.º día hábil (el del mes anterior, proporcional si entraste a mitad de mes).
+      // El del mes en curso cuenta si todavía no se cobró (el día de pago cuenta como pendiente).
       ...window
-        .filter((m) => m.endsWith("-06") || m.endsWith("-12"))
-        .map((month) => ({ month, kind: "income" as const, direction: "in" as const, label: "Aguinaldo (SAC)", amountCents: Math.round(ctx.netIncomeCents / 2) })),
+        .map((month) => ({ month, p: salaryPayment(month, pay) }))
+        .filter(({ month, p }) => p.amountCents > 0 && (month > ctx.month || ctx.today <= p.date))
+        .map(({ month, p }) => ({ month, kind: "income" as const, direction: "in" as const, label: p.days < 30 ? `Sueldo (${p.days} días)` : "Sueldo", amountCents: p.amountCents })),
+      // Aguinaldo (SAC) estimado: medio sueldo proporcional a los días trabajados del semestre.
+      ...window
+        .map((month) => ({ month, sac: sacPayment(month, pay) }))
+        .filter(({ month, sac }) => sac && (month > ctx.month || ctx.today <= sac.date))
+        .map(({ month, sac }) => ({ month, kind: "income" as const, direction: "in" as const, label: "Aguinaldo (SAC)", amountCents: sac!.amountCents })),
     ],
   };
 }
@@ -122,9 +165,12 @@ export function buildDashboard(ctx: FinanceContext) {
     .filter(isVariableSpend)
     .reduce((s, t) => s + t.amountCents - t.owedCents, 0);
 
+  // Lo que cobrás este mes (el primer sueldo puede ser proporcional). Si todavía no hay cobro
+  // (recién entraste), se usa el sueldo completo como referencia de presupuesto.
+  const paidThisMonth = salaryPayment(ctx.month, payrollInput(ctx)).amountCents;
   const safe = calculateSafeToSpend({
     today: ctx.today,
-    netIncomeCents: ctx.netIncomeCents,
+    netIncomeCents: paidThisMonth > 0 ? paidThisMonth : ctx.netIncomeCents,
     obligations: items.map((d) => ({ label: d.label, amountCents: d.amountCents, dueDate: d.dueDate, paid: d.paid })),
     goalContributionsCents,
     spentSoFarCents,
@@ -143,5 +189,6 @@ export function buildDashboard(ctx: FinanceContext) {
     goals: ctx.goals,
     previousMonth: addMonths(ctx.month, -1),
     netIncomeSource: ctx.netIncomeSource,
+    nextIncome: ctx.netIncomeCents > 0 ? nextIncome(ctx) : null,
   };
 }

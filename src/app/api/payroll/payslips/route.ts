@@ -14,6 +14,7 @@ const payslipInput = z.object({
   netCents: cents.positive(),
   lines: z.array(z.object({ code: z.string(), label: z.string(), type: z.enum(["rem", "nonrem", "deduction"]), amountCents: cents })).optional(),
   rawExtractedJson: z.unknown().optional(),
+  sourceDocumentId: z.string().uuid().nullish(),
 });
 
 export async function GET() {

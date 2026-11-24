@@ -31,8 +31,12 @@ npm test                     # tests de la lógica financiera
 2. En *Settings → Environment Variables* cargá:
    - `DATABASE_URL`: la URL de Neon.
    - `APP_PASSWORD`: la contraseña para entrar. **Sin ella la app queda abierta.**
-   - `ANTHROPIC_API_KEY`: para leer boletas y recibos.
+   - `ANTHROPIC_API_KEY` (opcional, pago): lectura con IA de fotos y PDFs. Sin ella, los PDFs
+     digitales se leen gratis con su texto y las fotos se completan a mano.
    - `AUTH_SECRET` (opcional): cualquier texto largo al azar.
+   - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` y `CRON_SECRET`: avisos de vencimientos
+     (claves con `npx web-push generate-vapid-keys`). El cron de `vercel.json` manda el aviso todos
+     los días a las 8 (hora argentina).
 3. El build (`vercel-build`) aplica las migraciones pendientes antes de compilar.
 
 ## Estructura
@@ -64,6 +68,7 @@ docs/                       # Reglas de negocio y esquemas de extracción
 
 - [x] **Fase 1** — PWA con UI clara, navegación (sidebar en compu, barra inferior en celu), manifest, service worker, esquema de base.
 - [x] **Fase 2** — Núcleo financiero puro con tests: cuánto puedo gastar, Auxiliar C, alquiler, contado vs. cuotas, cashflow, anomalías, simulador, objetivos, historial de precios.
+- [x] **Fase 4** — Lectura gratis de PDFs (sin IA), originales guardados, cuentas con saldo propio e ingresos, avisos push de vencimientos.
 - [x] **Fase 3** — Lectura de boletas y recibos con Claude (con revisión antes de guardar), historial de cotizaciones en la base, configuración (supuestos, puesto, escalas, índices), pantallas conectadas a la base y login con contraseña.
 
 ## Seguridad y datos

@@ -51,8 +51,13 @@ export default async function SueldoAlquilerPage() {
           ) : (
             <ul className="divide-y divide-border text-sm">
               {ctx.payslips.map((p) => (
-                <li key={p.period} className="flex justify-between py-2">
-                  <span>{monthLabel(p.period)}</span>
+                <li key={p.period} className="flex items-center gap-3 py-2">
+                  <span className="flex-1">{monthLabel(p.period)}</span>
+                  {p.documentId && (
+                    <a href={`/api/documents/${p.documentId}`} target="_blank" rel="noopener" className="text-xs text-accent hover:underline">
+                      Original
+                    </a>
+                  )}
                   <span className="num font-medium">{formatARS(p.netCents)}</span>
                 </li>
               ))}

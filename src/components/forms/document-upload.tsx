@@ -10,7 +10,7 @@ import { ConfirmBill, ConfirmPayslip, type BillDraft, type PayslipDraft } from "
 type State =
   | { step: "idle" }
   | { step: "reading" }
-  | { step: "confirm"; draft: Partial<BillDraft> | Partial<PayslipDraft>; raw?: unknown; warnings: string[] }
+  | { step: "confirm"; draft: Partial<BillDraft> | Partial<PayslipDraft>; raw?: unknown; warnings: string[]; documentId?: string | null }
   | { step: "saved" };
 
 /** Carga de boleta o recibo: foto/PDF → lectura automática → confirmación → guardado. */
@@ -20,24 +20,24 @@ export function DocumentUpload({ kind, canSave = true }: { kind: "bill" | "paysl
   const [message, setMessage] = useState<string | null>(null);
   const title = kind === "bill" ? "Cargar boleta" : "Importar recibo de sueldo";
 
-  async function onFile(file: File) {
+  async function onFile(original: File) {
     setMessage(null);
     setState({ step: "reading" });
+    const file = await shrinkImage(original);
     const form = new FormData();
     form.append("kind", kind);
     form.append("file", file);
     try {
       const res = await fetch("/api/documents/parse", { method: "POST", body: form });
       const data = await res.json().catch(() => ({}));
-      if (data.ok) {
-        setState({ step: "confirm", draft: data.draft, raw: data.raw, warnings: data.warnings ?? [] });
-      } else if (data.raw) {
-        // Se leyó algo pero no cerró la validación: se completa a mano.
-        setState({ step: "confirm", draft: {}, raw: data.raw, warnings: data.errors ?? [] });
-      } else {
-        setMessage(data.error ?? "No se pudo leer el archivo.");
+      if (!res.ok) {
+        setMessage(res.status === 401 ? "Tu sesión venció. Volvé a entrar." : (data.error ?? "No se pudo leer el archivo."));
         setState({ step: "idle" });
+        return;
       }
+      // Siempre se pasa a revisar: con datos si se pudo leer, vacío si hay que completarlo a mano.
+      const warnings = [...(data.message ? [data.message] : []), ...(data.warnings ?? [])];
+      setState({ step: "confirm", draft: data.ok ? data.draft : {}, raw: data.raw ?? undefined, warnings, documentId: data.documentId ?? null });
     } catch {
       setMessage("No se pudo enviar el archivo. Probá de nuevo con conexión.");
       setState({ step: "idle" });
@@ -49,14 +49,18 @@ export function DocumentUpload({ kind, canSave = true }: { kind: "bill" | "paysl
     setMessage(kind === "bill" ? "Boleta guardada." : "Recibo guardado.");
     router.refresh();
   };
-  const cancel = () => setState({ step: "idle" });
+  const cancel = () => {
+    // El original subido sin confirmar se descarta.
+    if (state.step === "confirm" && state.documentId) fetch(`/api/documents/${state.documentId}`, { method: "DELETE" }).catch(() => {});
+    setState({ step: "idle" });
+  };
 
   return (
     <Card>
       <CardHeader>
         <div>
           <CardTitle>{title}</CardTitle>
-          <CardDescription>PDF o foto. Revisás los datos antes de guardar.</CardDescription>
+          <CardDescription>PDF o foto. Se guarda el original y revisás los datos antes de confirmar.</CardDescription>
         </div>
         {state.step !== "confirm" && canSave && (
           <Button variant="ghost" size="sm" onClick={() => setState({ step: "confirm", draft: {}, warnings: [] })}>
@@ -75,9 +79,9 @@ export function DocumentUpload({ kind, canSave = true }: { kind: "bill" | "paysl
             </ul>
           )}
           {kind === "bill" ? (
-            <ConfirmBill draft={state.draft as Partial<BillDraft>} raw={state.raw} onDone={done} onCancel={cancel} />
+            <ConfirmBill draft={state.draft as Partial<BillDraft>} raw={state.raw} documentId={state.documentId} onDone={done} onCancel={cancel} />
           ) : (
-            <ConfirmPayslip draft={state.draft as Partial<PayslipDraft>} raw={state.raw} onDone={done} onCancel={cancel} />
+            <ConfirmPayslip draft={state.draft as Partial<PayslipDraft>} raw={state.raw} documentId={state.documentId} onDone={done} onCancel={cancel} />
           )}
         </div>
       ) : (
@@ -100,4 +104,22 @@ export function DocumentUpload({ kind, canSave = true }: { kind: "bill" | "paysl
       {message && <p className="mt-3 rounded-xl bg-accent-soft p-3 text-xs text-accent">{message}</p>}
     </Card>
   );
+}
+
+/** Achica fotos grandes (máx. 2000 px, JPEG) para no pasar el límite de 4 MB y ahorrar espacio. */
+async function shrinkImage(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || file.size < 1_500_000) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.82));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
 }

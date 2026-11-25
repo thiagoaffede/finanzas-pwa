@@ -39,7 +39,10 @@ export function SavingsSummary({
   const router = useRouter();
   const [manual, setManual] = useState(manualCents ?? 0);
   const [msg, setMsg] = useState<string | null>(null);
-  const usdTotal = usdCents + usdAccountsCents;
+  // Los dólares de las metas en general están guardados en una cuenta en dólares: no se suman dos veces.
+  // Si las metas suman más que las cuentas (dólares que no cargaste como cuenta), cuenta la diferencia.
+  const usdTotal = Math.max(usdCents, usdAccountsCents);
+  const usdFree = usdTotal - usdCents;
   const usdInArs = rate ? Math.round((usdTotal * rate.buyCents) / 100) : null;
 
   async function save(patch: Record<string, unknown>) {
@@ -54,7 +57,7 @@ export function SavingsSummary({
       <CardHeader>
         <div>
           <CardTitle>Ahorro</CardTitle>
-          <CardDescription>Metas en pesos y en dólares; los dólares se valúan al precio de compra del día.</CardDescription>
+          <CardDescription>Metas en pesos y tus dólares (cuentas y metas, sin contarlos dos veces), valuados al precio de compra del día.</CardDescription>
         </div>
       </CardHeader>
       <div className="grid gap-4 sm:grid-cols-3">
@@ -63,9 +66,14 @@ export function SavingsSummary({
           <p className="num text-lg font-semibold">{formatARS(arsCents)}</p>
         </div>
         <div>
-          <p className="text-xs text-ink-3">En dólares (metas y cuentas)</p>
+          <p className="text-xs text-ink-3">En dólares</p>
           <p className="num text-lg font-semibold">{formatUSD(usdTotal)}</p>
           {usdInArs !== null && <p className="num text-xs text-ink-3">≈ {formatARS(usdInArs)}</p>}
+          {usdCents > 0 && usdTotal > 0 && (
+            <p className="num text-[11px] text-ink-3">
+              {formatUSD(usdCents)} para metas{usdFree > 0 ? ` · ${formatUSD(usdFree)} libres` : ""}
+            </p>
+          )}
         </div>
         <div>
           <p className="text-xs text-ink-3">Total en pesos</p>

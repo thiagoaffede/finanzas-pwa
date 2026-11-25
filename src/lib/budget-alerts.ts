@@ -1,6 +1,6 @@
 import type { Db } from "@/lib/data/db-type";
-import { getSettings, listTransactions, saveSettings } from "@/lib/data/repository";
-import { computeBudgets, monthOf, pendingBudgetAlerts } from "@/lib/finance";
+import { getSettings, listMonthCuotas, listTransactions, saveSettings } from "@/lib/data/repository";
+import { budgetExpenses, computeBudgets, monthOf, pendingBudgetAlerts } from "@/lib/finance";
 import { buildBudgetAlert } from "@/lib/alerts";
 import { pushConfigured, sendToAll } from "@/lib/push";
 
@@ -12,12 +12,9 @@ export async function checkBudgetAlerts(db: Db, today: string) {
   const settings = await getSettings(db);
   if (!Object.values(settings.budgets).some((v) => v > 0)) return { sent: 0 };
   const month = monthOf(today);
-  const txs = await listTransactions(db, { month });
-  const { rows } = computeBudgets(
-    settings.budgets,
-    txs.filter((t) => !t.isIncome).map((t) => ({ category: t.category ?? "Otros", amountCents: t.amountCents, owedCents: t.owedCents })),
-    today,
-  );
+  const [txs, cuotas] = await Promise.all([listTransactions(db, { month }), listMonthCuotas(db, month)]);
+  const expenses = txs.map((t) => ({ category: t.category ?? "Otros", amountCents: t.amountCents, owedCents: t.owedCents, paymentMethod: t.paymentMethod, installments: t.installmentsCount, isIncome: t.isIncome }));
+  const { rows } = computeBudgets(settings.budgets, budgetExpenses(expenses, cuotas), today);
   const pending = pendingBudgetAlerts(rows, month, settings.budgetAlerts);
   if (pending.length === 0) return { sent: 0 };
   // Guarda primero (solo los avisos de este mes) para no repetir aunque falle el envío.

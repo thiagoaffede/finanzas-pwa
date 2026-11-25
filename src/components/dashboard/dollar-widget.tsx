@@ -24,7 +24,8 @@ export function DollarWidget({ compact = false, houses = ["oficial", "bolsa", "b
     };
   }, []);
 
-  const quotes = data?.quotes.filter((q) => houses.includes(q.house)) ?? [];
+  const manual = Boolean((data as (DollarSnapshot & { manual?: boolean }) | null)?.manual);
+  const quotes = data?.quotes.filter((q) => houses.includes(q.house) || (manual && q.house === "manual")) ?? [];
 
   if (!data) return <div className={cn("h-8 w-48 animate-pulse rounded-lg bg-surface-muted", compact && "w-32")} />;
   if (quotes.length === 0)
@@ -38,7 +39,7 @@ export function DollarWidget({ compact = false, houses = ["oficial", "bolsa", "b
           <span className="num font-semibold text-ink">{q.sellCents ? formatARS(q.sellCents) : "—"}</span>
         </div>
       ))}
-      {data.stale && <span className="text-warn">desactualizado</span>}
+      {manual ? <span className="text-ink-3">(cargado a mano)</span> : data.stale && <span className="text-warn">desactualizado</span>}
     </div>
   );
 }

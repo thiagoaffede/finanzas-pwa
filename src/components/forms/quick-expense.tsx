@@ -203,7 +203,10 @@ export function QuickExpense({
     onQueued?.(tx);
     setPending(await flushQueue());
     onSynced?.();
-    if (!income) budgetFeedback(category, amount - (tx.owedCents ?? 0));
+    if (!income && method === "cuotas" && installments > 1) {
+      const b = budgets.find((x) => x.category === category);
+      setBudgetMsg(b ? { text: `En cuotas: cada cuota de ${formatARS(Math.round(amount / installments))} cuenta en el presupuesto de ${category} del mes en que vence.`, tone: "good" } : null);
+    } else if (!income) budgetFeedback(category, amount - (tx.owedCents ?? 0));
     else setBudgetMsg(null);
     reset("Guardado");
   }

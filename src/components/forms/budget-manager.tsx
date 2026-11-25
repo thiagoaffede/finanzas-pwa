@@ -42,7 +42,7 @@ export function BudgetManager({
           <CardTitle>Presupuesto del mes</CardTitle>
           <CardDescription>
             {rows.length
-              ? `Gastaste ${formatARS(totalSpent)} de ${formatARS(totalLimit)} · quedan ${daysLeft} días. Te avisamos al llegar al 80 % y si te pasás.`
+              ? `Gastaste ${formatARS(totalSpent)} de ${formatARS(totalLimit)} · quedan ${daysLeft} días. Las compras en cuotas cuentan de a una cuota por mes. Te avisamos al llegar al 80 % y si te pasás.`
               : "Poné un tope por categoría (comida, salidas, ropa…) y te avisamos cuando te acerques."}
           </CardDescription>
         </div>

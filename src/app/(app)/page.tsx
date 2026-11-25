@@ -285,9 +285,15 @@ export default async function DashboardPage() {
                       key={i.id}
                       className="flex items-center justify-between py-1.5 text-sm"
                     >
-                      <span className={i.paid ? "text-ink-3 line-through" : ""}>
-                        {i.label}
-                      </span>
+                      {i.kind === "card" && !i.paid ? (
+                        <Link href="/presupuesto" className="text-accent hover:underline">
+                          {i.label}
+                        </Link>
+                      ) : (
+                        <span className={i.paid ? "text-ink-3 line-through" : ""}>
+                          {i.label}
+                        </span>
+                      )}
                       <span className="num text-ink-2">
                         {formatARS(i.amountCents)}
                       </span>

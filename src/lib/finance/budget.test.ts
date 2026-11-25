@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeBudgets, pendingBudgetAlerts } from "./budget";
+import { budgetExpenses, computeBudgets, pendingBudgetAlerts } from "./budget";
 import { cardInstallmentDue } from "./card";
 
 describe("presupuesto por categoría", () => {
@@ -44,5 +44,21 @@ describe("vencimiento de cuotas de tarjeta", () => {
   it("sin datos de la tarjeta, mismo día del mes siguiente", () => {
     expect(cardInstallmentDue("2026-01-31", 1)).toBe("2026-02-28");
     expect(cardInstallmentDue("2026-11-24", 2, null)).toBe("2027-01-24");
+  });
+});
+
+describe("presupuesto con compras en cuotas", () => {
+  it("cuenta la cuota del mes, no la compra entera; el pago único sí cuenta entero", () => {
+    const e = budgetExpenses(
+      [
+        { category: "Ropa", amountCents: 240_000_00, paymentMethod: "cuotas", installments: 6 },
+        { category: "Salidas", amountCents: 25_000_00, paymentMethod: "tarjeta", installments: 1 },
+        { category: "Sueldo", amountCents: 1_000_000_00, isIncome: true },
+      ],
+      [{ category: "Ropa", amountCents: 40_000_00 }, { category: "Hogar", amountCents: 45_000_00 }],
+    );
+    const r = computeBudgets({ Ropa: 100_000_00, Hogar: 50_000_00, Salidas: 30_000_00 }, e, "2026-11-25");
+    const by = Object.fromEntries(r.rows.map((x) => [x.category, x.spentCents]));
+    expect(by).toEqual({ Ropa: 40_000_00, Hogar: 45_000_00, Salidas: 25_000_00 });
   });
 });

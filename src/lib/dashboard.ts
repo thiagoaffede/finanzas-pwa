@@ -2,6 +2,7 @@ import {
   addMonths,
   calculateSafeFromBalance,
   calculateSafeToSpend,
+  budgetExpenses,
   computeBudgets,
   daysInMonth,
   detectBillAnomaly,
@@ -192,11 +193,7 @@ export function buildCashflowInput(ctx: FinanceContext, months = 6): CashflowInp
 
 /** Presupuesto del mes por categoría con lo gastado hasta hoy. */
 export function budgetSummary(ctx: FinanceContext) {
-  return computeBudgets(
-    ctx.settings.budgets,
-    ctx.transactions.map((t) => ({ category: t.category, amountCents: t.amountCents, owedCents: t.owedCents })),
-    ctx.today,
-  );
+  return computeBudgets(ctx.settings.budgets, budgetExpenses(ctx.transactions, ctx.monthCuotas), ctx.today);
 }
 
 export function billAnomalies(ctx: FinanceContext) {

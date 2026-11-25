@@ -135,6 +135,8 @@ export const installments = pgTable(
     dueDate: date("due_date").notNull(),
     amountCents: cents("amount_cents").notNull(),
     paid: boolean("paid").notNull().default(false),
+    /** Transferencia con la que se pagó el resumen (al borrarla la cuota vuelve a quedar impaga). */
+    paidTransferId: uuid("paid_transfer_id").references(() => transfers.id, { onDelete: "set null" }),
   },
   (t) => [index("installments_due_idx").on(t.dueDate), uniqueIndex("installments_tx_num_idx").on(t.transactionId, t.number)],
 );

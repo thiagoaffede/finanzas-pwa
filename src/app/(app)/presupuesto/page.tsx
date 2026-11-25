@@ -78,6 +78,8 @@ export default async function PresupuestoPage() {
     .filter((a) => a.kind === "tarjeta")
     .map(({ id, name, closingDay, dueDay, balanceCents }) => ({ id, name, closingDay, dueDay, balanceCents }));
 
+  const payFrom = ctx.accounts.filter((a) => a.kind !== "tarjeta" && (a.currency ?? "ARS") === "ARS").map(({ id, name }) => ({ id, name }));
+
   return (
     <div className="space-y-6">
       <PageHeader title="Presupuesto y vencimientos" description={`Topes por categoría, gastos fijos, cuotas y lo que vence. ${monthLabel(ctx.month)}.`} />
@@ -122,7 +124,7 @@ export default async function PresupuestoPage() {
         </div>
         <div className="min-w-0 space-y-4">
           <RecurringList items={recurringItems(ctx)} rentCents={ctx.rent ? currentRent(ctx) : 0} canSave={canSave} />
-          <CardInstallments purchases={ctx.cardPurchases} cards={cards} month={ctx.month} canSave={canSave} />
+          <CardInstallments purchases={ctx.cardPurchases} cards={cards} month={ctx.month} canSave={canSave} today={ctx.today} payFrom={payFrom} />
         </div>
       </div>
     </div>

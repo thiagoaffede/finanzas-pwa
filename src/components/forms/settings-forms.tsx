@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { formatARS, formatPct } from "@/lib/finance/money";
 import type { AppSettings, PayrollProfile } from "@/lib/data/repository";
 import type { ScaleEntry } from "@/lib/finance/commerce-union";
 import type { IndexData } from "@/lib/finance/rent-adjustment";
+import type { IndicesSyncResult } from "@/lib/market/official-indices";
 
 function useSave() {
   const router = useRouter();
@@ -282,13 +283,32 @@ export function ScalesManager({ scales, canSave, defaultCategory }: { scales: (S
 
 /* ───────────── Índices ICL / IPC ───────────── */
 
-export function IndicesManager({ indices, canSave }: { indices: IndexData; canSave: boolean }) {
+const syncTime = (iso: string) => new Date(iso).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short", hourCycle: "h23", timeZone: "America/Argentina/Buenos_Aires" });
+
+export function IndicesManager({ indices, canSave, sync }: { indices: IndexData; canSave: boolean; sync: IndicesSyncResult | null }) {
+  const router = useRouter();
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [type, setType] = useState<"ICL" | "IPC">("IPC");
   const [text, setText] = useState("");
   const [source, setSource] = useState("");
   const { busy, msg, setMsg, run } = useSave();
   const icl = indices.icl ?? [];
   const ipc = indices.ipc ?? [];
+
+  async function syncNow() {
+    setSyncing(true);
+    setSyncMsg(null);
+    const r = await send<IndicesSyncResult>("/api/indices/sync", "POST", {});
+    setSyncing(false);
+    if (!r.ok) return setSyncMsg({ ok: false, text: r.error });
+    const errs = [r.data.ipc.error, r.data.icl.error].filter(Boolean);
+    const saved = r.data.ipc.saved + r.data.icl.saved;
+    setSyncMsg({ ok: errs.length === 0, text: errs.length ? `Se actualizó solo una parte. ${errs.join(" · ")}` : saved ? `Listo: ${saved} valores nuevos.` : "Ya estaba todo al día." });
+    router.refresh();
+  }
+
+  const syncErrors = sync ? [sync.ipc.error, sync.icl.error].filter(Boolean) : [];
 
   async function save() {
     if (!text.trim()) return setMsg({ ok: false, text: "Pegá al menos una línea." });
@@ -305,23 +325,34 @@ export function IndicesManager({ indices, canSave }: { indices: IndexData; canSa
       <CardHeader>
         <div>
           <CardTitle>Índices para el alquiler</CardTitle>
-          <CardDescription>ICL (BCRA, diario) e IPC (INDEC, mensual). Copialos de la fuente oficial y pegalos acá.</CardDescription>
+          <CardDescription>ICL del BCRA (diario) e IPC del INDEC (mensual). Se actualizan solos todos los días desde las fuentes oficiales.</CardDescription>
         </div>
       </CardHeader>
 
-      <div className="mb-5 grid gap-3 text-sm sm:grid-cols-2">
+      <div className="mb-4 grid gap-3 text-sm sm:grid-cols-2">
         <div className="rounded-xl bg-surface-muted p-3">
-          <p className="text-xs text-ink-3">ICL cargados</p>
-          <p className="font-medium">{icl.length ? `${icl.length} valores · último ${dateLabel(icl[icl.length - 1].date)}: ${icl[icl.length - 1].value}` : "Ninguno"}</p>
+          <p className="text-xs text-ink-3">ICL (BCRA)</p>
+          <p className="font-medium">{icl.length ? `${dateLabel(icl[icl.length - 1].date)}: ${icl[icl.length - 1].value.toLocaleString("es-AR")}` : "Sin datos"}</p>
+          {icl.length > 0 && <p className="text-[11px] text-ink-3">{icl.length} valores diarios</p>}
         </div>
         <div className="rounded-xl bg-surface-muted p-3">
-          <p className="text-xs text-ink-3">IPC cargados</p>
-          <p className="font-medium">
-            {ipc.length ? `${ipc.length} meses · último ${monthLabel(ipc[ipc.length - 1].month)}: ${formatPct(ipc[ipc.length - 1].rate)}` : "Ninguno"}
-          </p>
+          <p className="text-xs text-ink-3">IPC (INDEC)</p>
+          <p className="font-medium">{ipc.length ? `${monthLabel(ipc[ipc.length - 1].month)}: ${formatPct(ipc[ipc.length - 1].rate)}` : "Sin datos"}</p>
+          {ipc.length > 0 && <p className="text-[11px] text-ink-3">{ipc.length} meses · el INDEC lo publica a mediados del mes siguiente</p>}
         </div>
       </div>
 
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <Button variant="outline" disabled={!canSave || syncing} onClick={syncNow}>
+          <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> {syncing ? "Actualizando…" : "Actualizar ahora"}
+        </Button>
+        <span className="text-xs text-ink-3">{sync ? `Última actualización: ${syncTime(sync.at)}` : "Todavía no se actualizaron."}</span>
+        {syncMsg ? <Status msg={syncMsg} /> : syncErrors.length > 0 && <span className="text-xs text-bad">{syncErrors.join(" · ")}</span>}
+      </div>
+
+      <details className="group">
+        <summary className="cursor-pointer text-sm font-medium text-ink-2">Cargar valores a mano</summary>
+        <p className="mt-2 mb-3 text-xs text-ink-3">Solo si te hace falta un valor que todavía no salió. La próxima actualización pisa los valores de las mismas fechas con los oficiales.</p>
       <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
         <Field label="Índice">
           <Select value={type} onChange={(e) => setType(e.target.value as "ICL" | "IPC")}>
@@ -352,6 +383,7 @@ export function IndicesManager({ indices, canSave }: { indices: IndexData; canSa
         <NoDb canSave={canSave} />
         <Status msg={msg} />
       </div>
+      </details>
     </Card>
   );
 }

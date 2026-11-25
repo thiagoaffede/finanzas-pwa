@@ -9,7 +9,8 @@ regla tiene tests en el archivo `*.test.ts` de al lado (`npm test`).
 > Antes de confiar en un número:
 > - cargá la escala vigente de Empleados de Comercio en `payroll_scales` (con su vigencia),
 > - revisá los porcentajes de `DEFAULT_COMMERCE_CONFIG` contra el acuerdo vigente,
-> - cargá ICL (BCRA) e IPC (INDEC) reales en `index_values`.
+> - el ICL (BCRA, variable 40) y el IPC nivel general nacional (INDEC, serie `148.3_INIVELNAL_DICI_M_26`) se bajan solos
+>   todos los días a `index_values` (`src/lib/market/official-indices.ts`); también se pueden cargar a mano.
 
 ## Convenciones
 

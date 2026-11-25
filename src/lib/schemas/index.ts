@@ -134,6 +134,8 @@ export const transferInput = z
     fromAccountId: z.string().uuid(),
     toAccountId: z.string().uuid(),
     amountCents: cents.positive(),
+    /** Si la cuenta destino es de otra moneda: lo que entra ahí. */
+    toAmountCents: cents.positive().nullish(),
     note: z.string().trim().max(200).nullish(),
   })
   .refine((t) => t.fromAccountId !== t.toAccountId, { message: "Elegí dos cuentas distintas", path: ["toAccountId"] });

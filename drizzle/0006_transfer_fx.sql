@@ -1,0 +1,1 @@
+ALTER TABLE "transfers" ADD COLUMN "to_amount_cents" bigint;

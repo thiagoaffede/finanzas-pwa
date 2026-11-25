@@ -9,7 +9,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { Field, Input, Select } from "@/components/ui/input";
 import { MoneyInput } from "./money-input";
 import { send } from "@/lib/client-api";
-import { formatARS } from "@/lib/finance/money";
+import { formatARS, formatUSD } from "@/lib/finance/money";
 import type { AccountKind, AccountView } from "@/lib/data/repository";
 
 export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = {
@@ -29,12 +29,15 @@ export function AccountsManager({ accounts, canSave }: { accounts: AccountView[]
   const [name, setName] = useState("");
   const [kind, setKind] = useState<AccountKind>("banco");
   const [balance, setBalance] = useState(0);
+  const [currency, setCurrency] = useState<"ARS" | "USD">("ARS");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transferring, setTransferring] = useState(false);
 
-  const cash = accounts.filter((a) => a.kind !== "tarjeta");
+  const cash = accounts.filter((a) => a.kind !== "tarjeta" && a.currency !== "USD");
   const total = cash.reduce((s, a) => s + a.balanceCents, 0);
+  const usd = accounts.filter((a) => a.currency === "USD").reduce((s, a) => s + a.balanceCents, 0);
+  const hasUsd = accounts.some((a) => a.currency === "USD");
 
   async function run(url: string, method: string, body: unknown) {
     setBusy(true);
@@ -57,7 +60,14 @@ export function AccountsManager({ accounts, canSave }: { accounts: AccountView[]
           <CardDescription>
             {cash.length ? (
               <>
-                Total disponible <span className="num font-medium text-ink">{formatARS(total)}</span> · se usa como saldo del flujo de caja
+                Total disponible <span className="num font-medium text-ink">{formatARS(total)}</span>
+                {hasUsd && (
+                  <>
+                    {" "}
+                    y <span className="num font-medium text-ink">{formatUSD(usd)}</span>
+                  </>
+                )}{" "}
+                · los pesos se usan como saldo del flujo de caja
               </>
             ) : (
               "Cargá dónde tenés la plata (banco, billetera, efectivo) para seguir el saldo de cada una."
@@ -84,12 +94,15 @@ export function AccountsManager({ accounts, canSave }: { accounts: AccountView[]
             <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
               <div className="min-w-0 flex-1 basis-32">
                 <p className="font-medium">{a.name}</p>
-                <p className="text-[11px] text-ink-3">{ACCOUNT_KIND_LABEL[a.kind]}</p>
+                <p className="text-[11px] text-ink-3">
+                  {ACCOUNT_KIND_LABEL[a.kind]}
+                  {a.currency === "USD" ? " · dólares" : ""}
+                </p>
               </div>
               {editing === a.id ? (
                 <>
                   <div className="w-40">
-                    <MoneyInput valueCents={a.balanceCents} onChange={setValue} />
+                    <MoneyInput valueCents={a.balanceCents} onChange={setValue} currency={a.currency} />
                   </div>
                   <Button
                     size="sm"
@@ -111,7 +124,7 @@ export function AccountsManager({ accounts, canSave }: { accounts: AccountView[]
               ) : (
                 <>
                   <span className={`num font-medium ${a.balanceCents < 0 ? "text-bad" : ""}`}>
-                    {a.kind === "tarjeta" && a.balanceCents < 0 ? `Debés ${formatARS(-a.balanceCents)}` : formatARS(a.balanceCents)}
+                    {a.kind === "tarjeta" && a.balanceCents < 0 ? `Debés ${formatARS(-a.balanceCents)}` : (a.currency === "USD" ? formatUSD : formatARS)(a.balanceCents)}
                   </span>
                   {canSave && (
                     <Button
@@ -135,7 +148,7 @@ export function AccountsManager({ accounts, canSave }: { accounts: AccountView[]
       )}
 
       {adding && (
-        <div className="mt-3 grid gap-3 border-t border-border pt-4 sm:grid-cols-3">
+        <div className="mt-3 grid gap-3 border-t border-border pt-4 sm:grid-cols-4">
           <Field label="Nombre">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Banco Nación" maxLength={60} />
           </Field>
@@ -148,14 +161,22 @@ export function AccountsManager({ accounts, canSave }: { accounts: AccountView[]
               ))}
             </Select>
           </Field>
+          {kind !== "tarjeta" && (
+            <Field label="Moneda">
+              <Select value={currency} onChange={(e) => setCurrency(e.target.value as "ARS" | "USD")}>
+                <option value="ARS">Pesos</option>
+                <option value="USD">Dólares</option>
+              </Select>
+            </Field>
+          )}
           <Field label={kind === "tarjeta" ? "Deuda actual" : "Saldo actual"}>
-            <MoneyInput valueCents={balance} onChange={setBalance} />
+            <MoneyInput key={currency} valueCents={balance} onChange={setBalance} currency={kind === "tarjeta" ? "ARS" : currency} />
           </Field>
-          <div className="flex items-center gap-2 sm:col-span-3">
+          <div className="flex items-center gap-2 sm:col-span-4">
             <Button
               disabled={busy || !name.trim()}
               onClick={async () => {
-                const ok = await run("/api/accounts", "POST", { name: name.trim(), kind, balanceCents: kind === "tarjeta" ? -Math.abs(balance) : balance });
+                const ok = await run("/api/accounts", "POST", { name: name.trim(), kind, currency: kind === "tarjeta" ? "ARS" : currency, balanceCents: kind === "tarjeta" ? -Math.abs(balance) : balance });
                 if (ok) {
                   setAdding(false);
                   setName("");

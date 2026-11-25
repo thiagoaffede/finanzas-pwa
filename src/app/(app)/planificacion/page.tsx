@@ -9,7 +9,10 @@ import { monthLabel, PROVIDER_NAME } from "@/lib/labels";
 import { DemoNotice } from "@/components/dashboard/demo-notice";
 import { buildCashflowInput, buildDashboard } from "@/lib/dashboard";
 import { availableBalance, loadFinanceContext, type FinanceContext } from "@/lib/data/context";
-import { addMonths, formatARS, formatPct, planGoal, priceVsInflation, todayAR } from "@/lib/finance";
+import { addMonths, formatARS, formatPct, formatUSD, planGoal, priceVsInflation, todayAR } from "@/lib/finance";
+import { getUsdRate, usdToArs } from "@/lib/market/usd-rate";
+import { getDb, hasDatabase } from "@/lib/db";
+import { SavingsSummary } from "@/components/forms/savings-summary";
 
 export const metadata: Metadata = { title: "Objetivos y planificación" };
 export const dynamic = "force-dynamic";
@@ -51,21 +54,39 @@ export default async function PlanificacionPage() {
   const base = buildCashflowInput(ctx);
   const prices = priceRows(ctx);
   const canSave = !ctx.demo;
+  const rate = await getUsdRate(hasDatabase() ? getDb() : null, ctx.settings.usdHouse, ctx.settings.usdManualCents);
+  const savedArs = ctx.goals.filter((g) => g.currency !== "USD").reduce((s, g) => s + g.savedCents, 0);
+  const savedUsd = ctx.goals.filter((g) => g.currency === "USD").reduce((s, g) => s + g.savedCents, 0);
+  const usdAccounts = ctx.accounts.filter((a) => a.currency === "USD").reduce((s, a) => s + a.balanceCents, 0);
 
   return (
     <div className="space-y-6">
       <PageHeader title="Objetivos y planificación" description="Metas de ahorro, flujo de caja a 6 meses, simulador e historial de precios." />
       {ctx.demo && <DemoNotice />}
 
+      <SavingsSummary
+        arsCents={savedArs}
+        usdCents={savedUsd}
+        usdAccountsCents={usdAccounts}
+        rate={rate}
+        house={ctx.settings.usdHouse}
+        manualCents={ctx.settings.usdManualCents}
+        canSave={canSave}
+      />
+
       <div className="grid gap-4 md:grid-cols-2">
         {ctx.goals.map((g) => {
+          const usd = g.currency === "USD";
+          const fmt = usd ? formatUSD : formatARS;
+          // El margen está en pesos: para metas en dólares se pasa a dólares con la cotización.
+          const marginInGoal = usd ? (rate ? Math.round((margin * 100) / rate.buyCents) : undefined) : margin;
           const plan = planGoal({
             targetCents: g.targetCents,
             savedCents: g.savedCents,
             today: ctx.today,
             targetDate: g.targetDate ?? undefined,
             monthlyContributionCents: g.monthlyContributionCents || undefined,
-            monthlyMarginCents: margin,
+            monthlyMarginCents: marginInGoal,
           });
           return (
             <Card key={g.id}>
@@ -73,7 +94,12 @@ export default async function PlanificacionPage() {
                 <div>
                   <CardTitle>{g.name}</CardTitle>
                   <CardDescription>
-                    {formatARS(g.savedCents)} de {formatARS(g.targetCents)}
+                    {fmt(g.savedCents)} de {fmt(g.targetCents)}
+                    {usd && rate && (
+                      <span className="block">
+                        Hoy valen {formatARS(usdToArs(g.savedCents, rate))} · meta {formatARS(usdToArs(g.targetCents, rate))}
+                      </span>
+                    )}
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-1">
@@ -85,11 +111,11 @@ export default async function PlanificacionPage() {
               <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                 <div>
                   <p className="text-xs text-ink-3">Por mes</p>
-                  <p className="num font-medium">{formatARS(plan.monthlyNeededCents ?? 0)}</p>
+                  <p className="num font-medium">{fmt(plan.monthlyNeededCents ?? 0)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-ink-3">Por semana</p>
-                  <p className="num font-medium">{formatARS(plan.weeklyNeededCents ?? 0)}</p>
+                  <p className="num font-medium">{fmt(plan.weeklyNeededCents ?? 0)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-ink-3">Llegás en</p>
@@ -97,7 +123,7 @@ export default async function PlanificacionPage() {
                 </div>
               </div>
               {plan.pctOfMargin !== null && <p className="mt-3 text-xs text-ink-3">Es el {formatPct(plan.pctOfMargin, 0)} de tu margen mensual.</p>}
-              <GoalContribution goalId={g.id} canSave={canSave} />
+              <GoalContribution goalId={g.id} canSave={canSave} currency={g.currency} />
             </Card>
           );
         })}

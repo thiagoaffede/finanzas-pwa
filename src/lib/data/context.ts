@@ -81,6 +81,7 @@ export interface TransferView {
   fromAccountId: string;
   toAccountId: string;
   amountCents: number;
+  toAmountCents: number | null;
   note: string | null;
 }
 
@@ -106,6 +107,7 @@ export interface GoalView {
   savedCents: number;
   monthlyContributionCents: number;
   targetDate: ISODate | null;
+  currency: "ARS" | "USD";
 }
 
 export type IncomeSource = "manual" | "recibo" | "estimado" | "ejemplo" | "sin datos";
@@ -303,7 +305,7 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     transactions: movements.filter((t) => !t.isIncome),
     movements,
     cardPurchases: [...byTx.values()],
-    transfers: transferRows.map((t) => ({ id: t.id, date: t.date, fromAccountId: t.fromAccountId, toAccountId: t.toAccountId, amountCents: t.amountCents, note: t.note })),
+    transfers: transferRows.map((t) => ({ id: t.id, date: t.date, fromAccountId: t.fromAccountId, toAccountId: t.toAccountId, amountCents: t.amountCents, toAmountCents: t.toAmountCents, note: t.note })),
     salaryHistory: salaryRows.map((r) => ({ id: r.id, period: r.period!, date: r.date, amountCents: r.amountCents, accountName: r.accountName })),
     installments: inst.map((i) => ({
       month: monthOf(i.dueDate),
@@ -318,6 +320,7 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
       savedCents: g.savedCents,
       monthlyContributionCents: g.monthlyContributionCents ?? 0,
       targetDate: g.targetDate,
+      currency: g.currency,
     })),
     accounts,
     avgVariableSpendCents,
@@ -374,7 +377,7 @@ export function loadDemo(today: ISODate): FinanceContext {
       .flatMap(installmentPlan)
       .filter((i) => i.month >= month)
       .map((i) => ({ month: i.month, dueDate: `${i.month}-22`, label: i.label, amountCents: i.amountCents })),
-    goals: demo.demoGoals().map((g) => ({ ...g, targetDate: null })),
+    goals: demo.demoGoals().map((g) => ({ ...g, targetDate: null, currency: "ARS" as const })),
     accounts: [],
     avgVariableSpendCents: 33_000_000,
     netIncomeCents: demo.DEMO_NET_INCOME_CENTS,

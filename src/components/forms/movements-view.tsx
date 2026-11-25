@@ -13,14 +13,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QuickExpense } from "./quick-expense";
 import { readQueue, type QueuedTransaction } from "@/lib/offline-queue";
-import { formatARS } from "@/lib/finance/money";
+import { formatARS, formatUSD } from "@/lib/finance/money";
 import { send } from "@/lib/client-api";
 import type { TransferView, TxView } from "@/lib/data/context";
 
 const METHOD: Record<string, string> = { contado: "Efectivo", debito: "Débito", tarjeta: "Tarjeta", cuotas: "Cuotas", transferencia: "Transf." };
 const fmtDate = (d: string) => d.slice(8, 10) + "/" + d.slice(5, 7);
 
-type Account = { id: string; name: string; kind: string };
+type Account = { id: string; name: string; kind: string; currency?: "ARS" | "USD"; balanceCents?: number };
 
 export function MovementsView({
   transactions,
@@ -42,6 +42,7 @@ export function MovementsView({
   const [editing, setEditing] = useState<TxView | null>(null);
   const [editingTransfer, setEditingTransfer] = useState<TransferView | null>(null);
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
+  const accountCur = new Map(accounts.map((a) => [a.id, a.currency ?? "ARS"]));
   const router = useRouter();
   const [local, setLocal] = useState<QueuedTransaction[]>([]);
   useEffect(() => queueMicrotask(() => setLocal(readQueue())), []);
@@ -84,7 +85,7 @@ export function MovementsView({
     <div className="space-y-4">
       <Suspense>
         <QuickExpense
-          accounts={accounts}
+          accounts={accounts.filter((a) => a.currency !== "USD")}
           salary={salary}
           nextPayday={nextPayday}
           budgets={budgets}
@@ -124,7 +125,10 @@ export function MovementsView({
                           </p>
                           <p className="text-[11px] text-ink-3">Transferencia{t.note ? ` · ${t.note}` : ""}</p>
                         </div>
-                        <span className="num shrink-0 font-medium text-ink-2">{formatARS(t.amountCents)}</span>
+                        <span className="num shrink-0 font-medium text-ink-2">
+                          {(accountCur.get(t.fromAccountId) === "USD" ? formatUSD : formatARS)(t.amountCents)}
+                          {t.toAmountCents ? ` → ${(accountCur.get(t.toAccountId) === "USD" ? formatUSD : formatARS)(t.toAmountCents)}` : ""}
+                        </span>
                         {canSave && <Pencil className="h-3.5 w-3.5 shrink-0 text-ink-3" aria-label="Editar" />}
                       </button>
                     </li>
@@ -195,7 +199,7 @@ export function MovementsView({
         </Card>
       </div>
       {editingTransfer && <TransferDialog accounts={accounts} transfer={editingTransfer} onClose={() => setEditingTransfer(null)} />}
-      {editing && <TxEditor tx={editing} accounts={accounts} onClose={() => setEditing(null)} />}
+      {editing && <TxEditor tx={editing} accounts={accounts.filter((a) => a.currency !== "USD")} onClose={() => setEditing(null)} />}
     </div>
   );
 }

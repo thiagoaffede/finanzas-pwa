@@ -8,6 +8,7 @@ const patch = z.object({
   targetCents: z.number().int().positive().optional(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   monthlyContributionCents: z.number().int().min(0).nullable().optional(),
+  currency: z.enum(["ARS", "USD"]).optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

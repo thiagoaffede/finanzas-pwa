@@ -53,7 +53,7 @@ Se instala en el celu y en la compu como una app (PWA) y funciona sin conexión.
 - **Estimador de sueldo** del convenio de Empleados de Comercio (CCT 130/75): antigüedad, presentismo, aportes y aguinaldo proporcional.
 - **"Es mi sueldo"**: al cargar el cobro se precarga el estimado, y se guarda un historial de sueldos.
 - **Recibos de sueldo** leídos desde el PDF, con el detalle línea por línea.
-- **Alquiler**: el próximo aumento por ICL, IPC o porcentaje fijo, según el contrato.
+- **Alquiler**: el próximo aumento por ICL, IPC o porcentaje fijo, según el contrato. El ICL (BCRA) y el IPC (INDEC) se actualizan solos todos los días desde las fuentes oficiales.
 
 ### 🎯 Planificación y ahorro
 - **Objetivos** en pesos o en dólares, con aporte mensual y fecha meta.
@@ -84,7 +84,8 @@ Se instala en el celu y en la compu como una app (PWA) y funciona sin conexión.
 | **Lectura de PDFs** | [unpdf](https://github.com/unjs/unpdf) gratis, con lectura opcional por IA ([Claude](https://www.anthropic.com/claude)) para fotos |
 | **Excel** | SpreadsheetML generado a mano y comprimido con [fflate](https://github.com/101arrowz/fflate), sin dependencias pesadas |
 | **Tests** | [Vitest](https://vitest.dev) con [PGlite](https://pglite.dev) (Postgres en memoria con las mismas migraciones) |
-| **Deploy** | [Vercel](https://vercel.com), con un cron diario para los avisos |
+| **Índices** | IPC de la [API de Series de Tiempo](https://datos.gob.ar/series) (INDEC) e ICL de la [API del BCRA](https://www.bcra.gob.ar/BCRAyVos/catalogo-de-APIs-banco-central.asp) |
+| **Deploy** | [Vercel](https://vercel.com), con un cron diario para índices y avisos |
 
 ## Probarla en tu compu
 
@@ -108,7 +109,7 @@ Para usarla en serio, conectá una base (abajo).
 2. Pegala en `DATABASE_URL` dentro de `.env.local` (ese archivo no se sube al repo).
 3. Aplicá las migraciones con `npm run db:migrate`.
 4. Entrá a **Configuración** y cargá:
-   - tu puesto, la escala de Comercio vigente y los índices (IPC/ICL);
+   - tu puesto y la escala de Comercio vigente (los índices IPC e ICL se bajan solos);
    - en **Cuentas**, tus cuentas con su saldo.
 
 ### Scripts
@@ -141,7 +142,7 @@ Para usarla en serio, conectá una base (abajo).
 | `AUTH_SECRET` | recomendada | Texto largo al azar para firmar la sesión. Cambiarlo cierra todas las sesiones. |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | para avisos | Claves de Web Push: `npx web-push generate-vapid-keys`. |
 | `VAPID_SUBJECT` | para avisos | Tu mail (`mailto:...`) o la URL `https://` de la app. Apple rechaza dominios inventados. |
-| `CRON_SECRET` | para avisos | Protege el cron diario de `vercel.json` (`/api/cron/due-alerts`, 8 a. m. hora argentina). |
+| `CRON_SECRET` | recomendada | Protege el cron diario de `vercel.json` (`/api/cron/due-alerts`, 8 a. m. hora argentina), que actualiza los índices y manda los avisos. |
 | `ANTHROPIC_API_KEY` | opcional, paga | Lectura con IA de fotos de boletas y recibos. Sin ella, los PDF digitales se leen gratis. |
 | `EXTRACTION_MODEL` | opcional | Modelo para esa lectura. |
 | `DOLLAR_API_URL`, `DOLLAR_CACHE_MINUTES` | opcional | De dónde se toman las cotizaciones del dólar y cada cuánto se refrescan. |
@@ -176,7 +177,7 @@ docs/                   Reglas de negocio y capturas
 Decisiones de fondo:
 - **Plata en centavos enteros** y fechas `YYYY-MM-DD`: nada de redondeos con decimales.
 - **La lógica financiera es pura** (sin base ni red) y está cubierta por tests. Las pantallas solo arman datos y muestran.
-- **Escalas salariales e índices son de referencia** hasta que cargues los vigentes. Ver [`docs/domain-rules.md`](docs/domain-rules.md).
+- **Las escalas salariales son de referencia** hasta que cargues las vigentes. Los índices IPC e ICL vienen de INDEC y BCRA. Ver [`docs/domain-rules.md`](docs/domain-rules.md).
 
 ## Seguridad
 

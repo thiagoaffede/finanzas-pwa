@@ -8,6 +8,7 @@ import type { BillInput, BillPatch, TransactionInput, TransactionPatch, Transfer
 import { addMonths, addMonthsToDate, lastDayOfMonth } from "@/lib/finance/dates";
 import { splitCents } from "@/lib/finance/money";
 import { cardInstallmentDue } from "@/lib/finance/card";
+import type { IndicesSyncResult } from "@/lib/market/official-indices";
 
 /** Acceso a datos. Funciones chicas sobre Drizzle; la lógica de negocio vive en lib/finance. */
 
@@ -34,6 +35,8 @@ export interface AppSettings {
   usdManualCents: number | null;
   /** Cuándo se bajó el último backup completo (ISO). */
   lastBackupAt: string | null;
+  /** Última actualización automática de IPC (INDEC) e ICL (BCRA). */
+  indicesSync: IndicesSyncResult | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -50,6 +53,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   usdHouse: "bolsa",
   usdManualCents: null,
   lastBackupAt: null,
+  indicesSync: null,
 };
 
 export async function getSettings(db: Db): Promise<AppSettings> {
@@ -221,12 +225,15 @@ export async function getIndices(db: Db): Promise<IndexData> {
 }
 
 export async function upsertIndexValues(db: Db, indexType: "ICL" | "IPC", points: { date: ISODate; value: number }[], source?: string) {
-  for (const p of points) {
-    const date = indexType === "IPC" ? `${p.date.slice(0, 7)}-01` : p.date;
+  // Una fila por fecha (si se repite, gana la última) y de a lotes: la serie completa del ICL son miles de días.
+  const byDate = new Map<string, string>();
+  for (const p of points) byDate.set(indexType === "IPC" ? `${p.date.slice(0, 7)}-01` : p.date, String(p.value));
+  const rows = [...byDate].map(([date, value]) => ({ indexType, date, value, source: source ?? null }));
+  for (let i = 0; i < rows.length; i += 500) {
     await db
       .insert(s.indexValues)
-      .values({ indexType, date, value: String(p.value), source: source ?? null })
-      .onConflictDoUpdate({ target: [s.indexValues.indexType, s.indexValues.date], set: { value: String(p.value), source: source ?? null } });
+      .values(rows.slice(i, i + 500))
+      .onConflictDoUpdate({ target: [s.indexValues.indexType, s.indexValues.date], set: { value: sql`excluded.value`, source: sql`excluded.source` } });
   }
   return points.length;
 }

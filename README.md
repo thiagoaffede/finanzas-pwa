@@ -15,7 +15,7 @@ Se instala en el celu y en la compu como una app (PWA) y funciona sin conexión.
 ![Vercel](https://img.shields.io/badge/Deploy-Vercel-black?logo=vercel)
 ![PWA](https://img.shields.io/badge/PWA-instalable-5a0fc8?logo=pwa)
 
-<img src="https://raw.githubusercontent.com/thiagoaffede/finanzas-pwa/main/docs/capturas/tablero-compu.png" alt="Tablero en la compu" width="900" />
+<img src="https://cdn.jsdelivr.net/gh/thiagoaffede/finanzas-pwa@main/docs/capturas/tablero-compu.png" alt="Tablero en la compu" width="900" />
 
 </div>
 
@@ -24,10 +24,10 @@ Se instala en el celu y en la compu como una app (PWA) y funciona sin conexión.
 ## En el celu
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/thiagoaffede/finanzas-pwa/main/docs/capturas/inicio.png" alt="Inicio: cuánto podés gastar hoy" width="200" />
-  <img src="https://raw.githubusercontent.com/thiagoaffede/finanzas-pwa/main/docs/capturas/presupuesto.png" alt="Presupuesto por categoría" width="200" />
-  <img src="https://raw.githubusercontent.com/thiagoaffede/finanzas-pwa/main/docs/capturas/reporte.png" alt="Reporte mensual con inflación" width="200" />
-  <img src="https://raw.githubusercontent.com/thiagoaffede/finanzas-pwa/main/docs/capturas/planificacion.png" alt="Ahorro en pesos y dólares" width="200" />
+  <img src="https://cdn.jsdelivr.net/gh/thiagoaffede/finanzas-pwa@main/docs/capturas/inicio.png" alt="Inicio: cuánto podés gastar hoy" width="200" />
+  <img src="https://cdn.jsdelivr.net/gh/thiagoaffede/finanzas-pwa@main/docs/capturas/presupuesto.png" alt="Presupuesto por categoría" width="200" />
+  <img src="https://cdn.jsdelivr.net/gh/thiagoaffede/finanzas-pwa@main/docs/capturas/reporte.png" alt="Reporte mensual con inflación" width="200" />
+  <img src="https://cdn.jsdelivr.net/gh/thiagoaffede/finanzas-pwa@main/docs/capturas/planificacion.png" alt="Ahorro en pesos y dólares" width="200" />
 </p>
 
 <p align="center"><sub>Inicio · Presupuesto · Reporte mensual · Ahorro en dólares</sub></p>

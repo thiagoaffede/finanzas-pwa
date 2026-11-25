@@ -87,6 +87,22 @@ describe("repositorio (PGlite)", () => {
     await repo.updateAccount(db, acc.id, { archived: true });
   });
 
+  it("transferencias: mueven saldo entre cuentas sin ser gasto ni ingreso", async () => {
+    const banco = await repo.createAccount(db, { name: "Banco T", kind: "banco", balanceCents: 100_000_00 });
+    const mp = await repo.createAccount(db, { name: "Billetera T", kind: "billetera", balanceCents: 10_000_00 });
+    const t = await repo.createTransfer(db, { date: TODAY, fromAccountId: banco.id, toAccountId: mp.id, amountCents: 30_000_00 });
+    const bal = async () => Object.fromEntries((await repo.listAccounts(db)).map((a) => [a.id, a.balanceCents]));
+    expect((await bal())[banco.id]).toBe(70_000_00);
+    expect((await bal())[mp.id]).toBe(40_000_00);
+    await repo.updateTransfer(db, t.id, { date: TODAY, fromAccountId: mp.id, toAccountId: banco.id, amountCents: 5_000_00 });
+    expect((await bal())[banco.id]).toBe(105_000_00);
+    expect((await repo.listTransfers(db, "2026-11")).map((x) => x.id)).toEqual([t.id]);
+    await repo.deleteTransfer(db, t.id);
+    expect((await bal())[mp.id]).toBe(10_000_00);
+    await repo.updateAccount(db, banco.id, { archived: true });
+    await repo.updateAccount(db, mp.id, { archived: true });
+  });
+
   it("movimientos: editar y borrar", async () => {
     const t = await repo.createTransaction(db, { date: TODAY, amountCents: 5_000_00, isIncome: false, paymentMethod: "debito", installmentsCount: 1, owedCents: 0, description: "Café" });
     await repo.updateTransaction(db, t!.id, { amountCents: 6_000_00, description: "Café y medialunas" });
@@ -169,13 +185,15 @@ describe("repositorio (PGlite)", () => {
     const gasto = await repo.createTransaction(db, { ...base, date: TODAY, amountCents: 30_000_00, clientId: "acc-1" });
     await repo.createTransaction(db, { ...base, date: TODAY, amountCents: 100_000_00, isIncome: true, clientId: "acc-2" });
     await repo.setReimbursed(db, gasto!.id, 10_000_00);
-    const [banco, visa] = await repo.listAccounts(db);
+    const all = await repo.listAccounts(db);
+    const banco = all.find((a) => a.id === acc.id)!;
+    const visa = all.find((a) => a.kind === "tarjeta")!;
     expect(banco.balanceCents).toBe(580_000_00);
     expect(visa.balanceCents).toBe(-20_000_00);
 
     // Ajustar al saldo real: lo anterior deja de contar.
     await repo.setAccountBalance(db, acc.id, 600_000_00);
-    const [ajustado] = await repo.listAccounts(db);
+    const ajustado = (await repo.listAccounts(db)).find((a) => a.id === acc.id)!;
     expect(ajustado.balanceCents).toBe(600_000_00);
 
     // El flujo de caja arranca del total de cuentas (sin tarjetas).

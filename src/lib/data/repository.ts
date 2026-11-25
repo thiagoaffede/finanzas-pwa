@@ -4,7 +4,7 @@ import type { Db } from "./db-type";
 import type { BillProvider, ISODate, Rate, YearMonth } from "@/types/finance";
 import type { CommerceCategory, CommerceUnionConfig, PayLine, ScaleEntry } from "@/lib/finance/commerce-union";
 import type { IndexData, RentContract } from "@/lib/finance/rent-adjustment";
-import type { BillInput, BillPatch, TransactionInput, TransactionPatch } from "@/lib/schemas";
+import type { BillInput, BillPatch, TransactionInput, TransactionPatch, TransferInput } from "@/lib/schemas";
 import { addMonths, addMonthsToDate, lastDayOfMonth } from "@/lib/finance/dates";
 import { splitCents } from "@/lib/finance/money";
 
@@ -526,6 +526,21 @@ export async function listAccounts(db: Db): Promise<AccountView[]> {
     .where(sql`${s.transactions.createdAt} > ${s.accounts.balanceSetAt}`)
     .groupBy(s.transactions.accountId);
   const delta = new Map(moves.map((m) => [m.accountId, Number(m.delta)]));
+  // Transferencias: salen de una cuenta y entran en otra (cuentan las cargadas después de fijar el saldo).
+  const outs = await db
+    .select({ accountId: s.transfers.fromAccountId, total: sql<string>`coalesce(sum(${s.transfers.amountCents}), 0)` })
+    .from(s.transfers)
+    .innerJoin(s.accounts, eq(s.transfers.fromAccountId, s.accounts.id))
+    .where(sql`${s.transfers.createdAt} > ${s.accounts.balanceSetAt}`)
+    .groupBy(s.transfers.fromAccountId);
+  const ins = await db
+    .select({ accountId: s.transfers.toAccountId, total: sql<string>`coalesce(sum(${s.transfers.amountCents}), 0)` })
+    .from(s.transfers)
+    .innerJoin(s.accounts, eq(s.transfers.toAccountId, s.accounts.id))
+    .where(sql`${s.transfers.createdAt} > ${s.accounts.balanceSetAt}`)
+    .groupBy(s.transfers.toAccountId);
+  for (const o of outs) delta.set(o.accountId, (delta.get(o.accountId) ?? 0) - Number(o.total));
+  for (const i of ins) delta.set(i.accountId, (delta.get(i.accountId) ?? 0) + Number(i.total));
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -555,6 +570,30 @@ export async function setAccountBalance(db: Db, id: string, balanceCents: number
 export async function updateAccount(db: Db, id: string, patch: { name?: string; archived?: boolean }) {
   const [row] = await db.update(s.accounts).set({ ...patch, updatedAt: new Date() }).where(eq(s.accounts.id, id)).returning();
   return row ?? null;
+}
+
+// ─── Transferencias ─────────────────────────────────────────────────────────
+export async function createTransfer(db: Db, t: TransferInput) {
+  const [row] = await db.insert(s.transfers).values(t).returning();
+  return row;
+}
+
+export async function updateTransfer(db: Db, id: string, t: TransferInput) {
+  const [row] = await db.update(s.transfers).set({ ...t, updatedAt: new Date() }).where(eq(s.transfers.id, id)).returning();
+  return row ?? null;
+}
+
+export async function deleteTransfer(db: Db, id: string) {
+  const [row] = await db.delete(s.transfers).where(eq(s.transfers.id, id)).returning({ id: s.transfers.id });
+  return row ?? null;
+}
+
+export async function listTransfers(db: Db, month: YearMonth) {
+  return db
+    .select()
+    .from(s.transfers)
+    .where(and(gte(s.transfers.date, `${month}-01`), lte(s.transfers.date, lastDayOfMonth(month))))
+    .orderBy(desc(s.transfers.date), desc(s.transfers.createdAt));
 }
 
 // ─── Avisos push ────────────────────────────────────────────────────────────

@@ -101,6 +101,25 @@ export const transactions = pgTable(
   (t) => [index("transactions_date_idx").on(t.date), index("transactions_category_idx").on(t.categoryId)],
 );
 
+/** Transferencias entre cuentas propias (banco → billetera, retiro de efectivo, pago de tarjeta). No son gasto ni ingreso. */
+export const transfers = pgTable(
+  "transfers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    date: date("date").notNull(),
+    fromAccountId: uuid("from_account_id")
+      .notNull()
+      .references(() => accounts.id),
+    toAccountId: uuid("to_account_id")
+      .notNull()
+      .references(() => accounts.id),
+    amountCents: cents("amount_cents").notNull(),
+    note: text("note"),
+    ...timestamps,
+  },
+  (t) => [index("transfers_date_idx").on(t.date)],
+);
+
 /** Cuotas futuras generadas automáticamente desde un gasto en cuotas. */
 export const installments = pgTable(
   "installments",

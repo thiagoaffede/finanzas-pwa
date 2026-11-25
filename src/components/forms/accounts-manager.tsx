@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Pencil, Plus, X } from "lucide-react";
+import { ArrowRightLeft, Check, Pencil, Plus, X } from "lucide-react";
+import { TransferDialog } from "./transfer-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/input";
@@ -30,6 +31,7 @@ export function AccountsManager({ accounts, canSave }: { accounts: AccountView[]
   const [balance, setBalance] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [transferring, setTransferring] = useState(false);
 
   const cash = accounts.filter((a) => a.kind !== "tarjeta");
   const total = cash.reduce((s, a) => s + a.balanceCents, 0);
@@ -63,9 +65,16 @@ export function AccountsManager({ accounts, canSave }: { accounts: AccountView[]
           </CardDescription>
         </div>
         {canSave && !adding && (
-          <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
-            <Plus className="h-3.5 w-3.5" /> Nueva
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            {accounts.length >= 2 && (
+              <Button variant="outline" size="sm" onClick={() => setTransferring(true)}>
+                <ArrowRightLeft className="h-3.5 w-3.5" /> Transferir
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
+              <Plus className="h-3.5 w-3.5" /> Nueva
+            </Button>
+          </div>
         )}
       </CardHeader>
 
@@ -165,11 +174,12 @@ export function AccountsManager({ accounts, canSave }: { accounts: AccountView[]
 
       {accounts.length > 0 && (
         <p className="mt-3 text-[11px] text-ink-3">
-          El saldo se mueve con los gastos e ingresos que cargues en cada cuenta. Si no coincide con el banco, tocá el lápiz y poné el real.
+          El saldo se mueve con los gastos, ingresos y transferencias que cargues en cada cuenta. Si no coincide con el banco, tocá el lápiz y poné el real.
         </p>
       )}
       {!canSave && <p className="mt-2 text-xs text-ink-3">Conectá la base de datos para guardar.</p>}
       {error && <p className="mt-2 text-xs text-bad">{error}</p>}
+      {transferring && <TransferDialog accounts={accounts} onClose={() => setTransferring(false)} />}
     </Card>
   );
 }

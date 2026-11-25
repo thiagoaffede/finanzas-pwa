@@ -21,6 +21,8 @@ export async function GET(req: Request) {
       ...(what === "all"
         ? {
             installments: await db.select().from(schema.installments),
+            accounts: await db.select().from(schema.accounts),
+            transfers: await db.select().from(schema.transfers),
             payslips: await db.select().from(schema.payslips),
             goals: await db.select().from(schema.goals),
             rentContracts: await db.select().from(schema.rentContracts),

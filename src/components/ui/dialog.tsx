@@ -27,7 +27,7 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-card bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-lg sm:rounded-card"
+        className="max-h-[90dvh] w-full min-w-0 max-w-md overflow-y-auto overflow-x-hidden rounded-t-card bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-lg sm:rounded-card"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">

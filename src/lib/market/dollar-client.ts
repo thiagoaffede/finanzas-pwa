@@ -25,7 +25,7 @@ export interface DollarSnapshot {
 }
 
 const ORDER = ["oficial", "bolsa", "blue", "contadoconliqui", "cripto", "tarjeta", "mayorista"];
-const LABELS: Record<string, string> = {
+export const LABELS: Record<string, string> = {
   oficial: "Oficial",
   bolsa: "MEP",
   blue: "Blue",

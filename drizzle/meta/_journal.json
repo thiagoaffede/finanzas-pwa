@@ -50,6 +50,13 @@
       "when": 1795609751003,
       "tag": "0006_transfer_fx",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795612627851,
+      "tag": "0007_card_statement_payment",
+      "breakpoints": true
     }
   ]
 }

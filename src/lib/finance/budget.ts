@@ -28,6 +28,23 @@ export function budgetStatus(spent: number, limit: number): BudgetRow["status"] 
   return spent > limit ? "over" : spent >= limit * BUDGET_WARN ? "warn" : "ok";
 }
 
+/** ¿Es una compra en cuotas? Esas no cuentan enteras: cuenta cada cuota en el mes en que vence. */
+export const isMultiCuota = (t: { paymentMethod?: string; installments?: number }) => t.paymentMethod === "cuotas" && (t.installments ?? 1) > 1;
+
+/**
+ * Lo que entra al presupuesto del mes: los gastos del mes salvo las compras en cuotas,
+ * más las cuotas que vencen este mes (de compras de este mes o de antes).
+ */
+export function budgetExpenses(
+  expenses: { category: string; amountCents: Cents; owedCents?: Cents; paymentMethod?: string; installments?: number; isIncome?: boolean }[],
+  monthCuotas: { category: string; amountCents: Cents; owedCents?: Cents }[],
+) {
+  return [
+    ...expenses.filter((e) => !e.isIncome && !isMultiCuota(e)).map(({ category, amountCents, owedCents }) => ({ category, amountCents, owedCents })),
+    ...monthCuotas,
+  ];
+}
+
 export function computeBudgets(
   limits: Record<string, Cents>,
   expenses: { category: string; amountCents: Cents; owedCents?: Cents }[],

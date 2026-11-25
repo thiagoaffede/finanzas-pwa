@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import * as s from "@/lib/db/schema";
 import type { Db } from "./db-type";
 import type { BillProvider, ISODate, Rate, YearMonth } from "@/types/finance";
@@ -335,6 +335,9 @@ function billName(b: { provider: string; providerLabel: string | null }) {
 // ─── Movimientos y cuotas ───────────────────────────────────────────────────
 /** Cuotas (o el único pago con tarjeta) de un gasto: se pagan con el resumen, según el cierre de la tarjeta. */
 async function writeInstallments(db: Db, tx: { id: string; date: string; amountCents: number; installmentsCount: number; paymentMethod: string; accountId: string | null }) {
+  // Las cuotas ya pagadas con un resumen siguen pagadas aunque se edite la compra.
+  const before = await db.select({ number: s.installments.number, paid: s.installments.paid, paidTransferId: s.installments.paidTransferId }).from(s.installments).where(eq(s.installments.transactionId, tx.id));
+  const wasPaid = new Map(before.filter((b) => b.paid).map((b) => [b.number, b.paidTransferId]));
   await db.delete(s.installments).where(eq(s.installments.transactionId, tx.id));
   const onCard = tx.paymentMethod === "cuotas" || tx.paymentMethod === "tarjeta";
   if (!onCard) return;
@@ -350,6 +353,8 @@ async function writeInstallments(db: Db, tx: { id: string; date: string; amountC
       total: count,
       dueDate: cardInstallmentDue(tx.date, i + 1, card),
       amountCents,
+      paid: wasPaid.has(i + 1),
+      paidTransferId: wasPaid.get(i + 1) ?? null,
     })),
   );
 }
@@ -397,6 +402,7 @@ export async function listCardPurchases(db: Db, from: ISODate) {
       purchaseDate: s.transactions.date,
       purchaseCents: s.transactions.amountCents,
       accountId: s.transactions.accountId,
+      paid: s.installments.paid,
     })
     .from(s.installments)
     .innerJoin(s.transactions, eq(s.installments.transactionId, s.transactions.id))
@@ -418,8 +424,70 @@ export async function listInstallments(db: Db, from: ISODate) {
     })
     .from(s.installments)
     .innerJoin(s.transactions, eq(s.installments.transactionId, s.transactions.id))
-    .where(gte(s.installments.dueDate, from))
+    .where(and(gte(s.installments.dueDate, from), eq(s.installments.paid, false)))
     .orderBy(asc(s.installments.dueDate));
+}
+
+/**
+ * Cuotas que vencen en el mes, de compras en 2 o más cuotas, con su categoría (pagadas o no).
+ * Para el presupuesto: cada cuota cuenta en el mes en que vence, no la compra entera.
+ */
+export async function listMonthCuotas(db: Db, month: YearMonth) {
+  const rows = await db
+    .select({
+      category: s.transactions.category,
+      amountCents: s.installments.amountCents,
+      purchaseCents: s.transactions.amountCents,
+      owedCents: s.transactions.owedCents,
+    })
+    .from(s.installments)
+    .innerJoin(s.transactions, eq(s.installments.transactionId, s.transactions.id))
+    .where(
+      and(
+        gte(s.installments.dueDate, `${month}-01`),
+        lte(s.installments.dueDate, lastDayOfMonth(month)),
+        eq(s.transactions.paymentMethod, "cuotas"),
+        sql`${s.installments.total} > 1`,
+        eq(s.transactions.isIncome, false),
+      ),
+    );
+  return rows.map((r) => ({
+    category: r.category ?? "Otros",
+    amountCents: r.amountCents,
+    owedCents: r.purchaseCents > 0 ? Math.round((r.owedCents * r.amountCents) / r.purchaseCents) : 0,
+  }));
+}
+
+/** Resumen de tarjeta: lo que vence en una fecha, impago. */
+export async function listStatementInstallments(db: Db, cardAccountId: string, dueDate: ISODate) {
+  return db
+    .select({ id: s.installments.id, amountCents: s.installments.amountCents })
+    .from(s.installments)
+    .innerJoin(s.transactions, eq(s.installments.transactionId, s.transactions.id))
+    .where(and(eq(s.transactions.accountId, cardAccountId), eq(s.installments.dueDate, dueDate), eq(s.installments.paid, false)));
+}
+
+/**
+ * Paga el resumen de una tarjeta: transfiere desde una cuenta a la tarjeta (baja la deuda)
+ * y marca como pagadas las cuotas de ese vencimiento. Borrar la transferencia las deja impagas otra vez.
+ */
+export async function payCardStatement(
+  db: Db,
+  p: { cardAccountId: string; dueDate: ISODate; fromAccountId: string; amountCents: number; date: ISODate },
+): Promise<{ ok: true; transferId: string; installments: number } | { ok: false; error: string }> {
+  const [card] = await db.select().from(s.accounts).where(eq(s.accounts.id, p.cardAccountId));
+  if (!card || card.kind !== "tarjeta") return { ok: false, error: "Esa cuenta no es una tarjeta." };
+  const [from] = await db.select().from(s.accounts).where(eq(s.accounts.id, p.fromAccountId));
+  if (!from || from.kind === "tarjeta" || from.archived) return { ok: false, error: "Elegí de qué cuenta sale la plata." };
+  if (from.currency !== card.currency) return { ok: false, error: "La cuenta y la tarjeta tienen que estar en la misma moneda." };
+  const items = await listStatementInstallments(db, p.cardAccountId, p.dueDate);
+  if (items.length === 0) return { ok: false, error: "No hay cuotas impagas con ese vencimiento." };
+  const [tr] = await db
+    .insert(s.transfers)
+    .values({ date: p.date, fromAccountId: p.fromAccountId, toAccountId: p.cardAccountId, amountCents: p.amountCents, note: `Pago resumen ${card.name} (vence ${p.dueDate.split("-").reverse().join("/")})` })
+    .returning();
+  await db.update(s.installments).set({ paid: true, paidTransferId: tr.id }).where(inArray(s.installments.id, items.map((i) => i.id)));
+  return { ok: true, transferId: tr.id, installments: items.length };
 }
 
 /** Edita un movimiento. Si era en cuotas y cambió el monto o la fecha, rehace las cuotas. */
@@ -642,6 +710,8 @@ export async function updateTransfer(db: Db, id: string, t: TransferInput) {
 }
 
 export async function deleteTransfer(db: Db, id: string) {
+  // Si era el pago de un resumen, sus cuotas vuelven a quedar impagas.
+  await db.update(s.installments).set({ paid: false, paidTransferId: null }).where(eq(s.installments.paidTransferId, id));
   const [row] = await db.delete(s.transfers).where(eq(s.transfers.id, id)).returning({ id: s.transfers.id });
   return row ?? null;
 }

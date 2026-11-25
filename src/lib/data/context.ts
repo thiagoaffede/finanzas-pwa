@@ -135,6 +135,8 @@ export interface FinanceContext {
   transfers: TransferView[];
   /** Compras con tarjeta que todavía tienen cuotas. */
   cardPurchases: CardPurchase[];
+  /** Cuotas (de compras en 2 o más) que vencen este mes, con su categoría: van al presupuesto del mes. */
+  monthCuotas: { category: string; amountCents: number; owedCents: number }[];
   installments: InstallmentView[];
   goals: GoalView[];
   accounts: repo.AccountView[];
@@ -207,10 +209,11 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     repo.listTransactions(db, { from: `${addMonths(month, -3)}-01`, to: lastDayOfMonth(addMonths(month, -1)) }),
     repo.listAccounts(db),
   ]);
-  const [salaryRows, transferRows, cardRows] = await Promise.all([
+  const [salaryRows, transferRows, cardRows, monthCuotas] = await Promise.all([
     repo.listSalaryHistory(db),
     repo.listTransfers(db, month),
     repo.listCardPurchases(db, `${month}-01`),
+    repo.listMonthCuotas(db, month),
   ]);
   const byTx = new Map<string, CardPurchase>();
   for (const r of cardRows) {
@@ -229,7 +232,8 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
           lastDue: r.dueDate,
         })
         .get(r.transactionId)!;
-    if (r.dueDate >= `${month}-01`) {
+    // Pendientes: las impagas desde este mes (incluye las vencidas de este mes sin pagar).
+    if (r.dueDate >= `${month}-01` && !r.paid) {
       p.pending.push({ number: r.number, dueDate: r.dueDate, amountCents: r.amountCents });
       p.remainingCents += r.amountCents;
     }
@@ -304,7 +308,8 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     billHistory,
     transactions: movements.filter((t) => !t.isIncome),
     movements,
-    cardPurchases: [...byTx.values()],
+    cardPurchases: [...byTx.values()].filter((p) => p.pending.length > 0),
+    monthCuotas,
     transfers: transferRows.map((t) => ({ id: t.id, date: t.date, fromAccountId: t.fromAccountId, toAccountId: t.toAccountId, amountCents: t.amountCents, toAmountCents: t.toAmountCents, note: t.note })),
     salaryHistory: salaryRows.map((r) => ({ id: r.id, period: r.period!, date: r.date, amountCents: r.amountCents, accountName: r.accountName })),
     installments: inst.map((i) => ({
@@ -372,6 +377,7 @@ export function loadDemo(today: ISODate): FinanceContext {
     salaryHistory: [],
     transfers: [],
     cardPurchases: [],
+    monthCuotas: [],
     installments: demo
       .demoInstallmentPlans(today)
       .flatMap(installmentPlan)

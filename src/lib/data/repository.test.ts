@@ -123,6 +123,41 @@ describe("repositorio (PGlite)", () => {
     await repo.updateAccount(db, usd.id, { archived: true });
   });
 
+  it("resumen de tarjeta: pagarlo baja la deuda, marca las cuotas y borrar el pago las deja impagas", async () => {
+    const banco = await repo.createAccount(db, { name: "Banco R", kind: "banco", balanceCents: 1_000_000_00 });
+    const visa = await repo.createAccount(db, { name: "Visa R", kind: "tarjeta", balanceCents: 0 });
+    await repo.updateAccount(db, visa.id, { closingDay: 22, dueDay: 5 });
+    const base = { isIncome: false, owedCents: 0, accountId: visa.id, category: "Ropa" } as const;
+    const tx = (await repo.createTransaction(db, { ...base, date: "2026-10-10", amountCents: 60_000_00, paymentMethod: "cuotas", installmentsCount: 3, description: "Zapatillas" } as never))!;
+    const cine = (await repo.createTransaction(db, { ...base, date: "2026-10-12", amountCents: 9_000_00, paymentMethod: "tarjeta", installmentsCount: 1, description: "Cine", category: "Salidas" } as never))!;
+    // Las dos vencen el 5/11 (cierre 22/10).
+    expect((await repo.listStatementInstallments(db, visa.id, "2026-11-05")).length).toBe(2);
+    // Presupuesto de noviembre: la cuota de las zapatillas, no la compra entera.
+    expect((await repo.listMonthCuotas(db, "2026-11")).filter((c) => c.category === "Ropa").map((c) => c.amountCents)).toEqual([20_000_00]);
+
+    const bad = await repo.payCardStatement(db, { cardAccountId: banco.id, dueDate: "2026-11-05", fromAccountId: banco.id, amountCents: 1, date: TODAY });
+    expect(bad.ok).toBe(false);
+    const r = await repo.payCardStatement(db, { cardAccountId: visa.id, dueDate: "2026-11-05", fromAccountId: banco.id, amountCents: 29_000_00, date: TODAY });
+    expect(r.ok && r.installments).toBe(2);
+    const bal = async () => Object.fromEntries((await repo.listAccounts(db)).map((a) => [a.id, a.balanceCents]));
+    expect((await bal())[banco.id]).toBe(971_000_00);
+    expect((await bal())[visa.id]).toBe(-69_000_00 + 29_000_00);
+    expect(await repo.listStatementInstallments(db, visa.id, "2026-11-05")).toHaveLength(0);
+    expect((await repo.listInstallments(db, "2026-11-01")).some((i) => i.dueDate === "2026-11-05")).toBe(false);
+    const ctx = await loadFromDb(db, TODAY);
+    const zap = ctx.cardPurchases.find((p) => p.transactionId === tx.id)!;
+    expect(zap.pending.map((q) => q.number)).toEqual([2, 3]);
+
+    // Editar la compra no "despaga" la cuota 1.
+    await repo.updateTransaction(db, tx.id, { description: "Zapatillas running" });
+    expect(await repo.listStatementInstallments(db, visa.id, "2026-11-05")).toHaveLength(0);
+    // Borrar el pago: vuelven a quedar impagas.
+    if (r.ok) await repo.deleteTransfer(db, r.transferId);
+    expect(await repo.listStatementInstallments(db, visa.id, "2026-11-05")).toHaveLength(2);
+    for (const t of [tx, cine]) await repo.deleteTransaction(db, t.id);
+    for (const id of [banco.id, visa.id]) await repo.updateAccount(db, id, { archived: true });
+  });
+
   it("tarjeta: cuotas según el cierre, y el pago único también se proyecta", async () => {
     const visa = await repo.createAccount(db, { name: "Visa T", kind: "tarjeta", balanceCents: 0 });
     await repo.updateAccount(db, visa.id, { closingDay: 20, dueDay: 5 });

@@ -8,6 +8,9 @@ const patch = z.object({
   balanceCents: z.number().int().optional(),
   name: z.string().trim().min(1).max(60).optional(),
   archived: z.boolean().optional(),
+  /** Tarjetas: día de cierre y de vencimiento del resumen. */
+  closingDay: z.number().int().min(1).max(31).nullable().optional(),
+  dueDay: z.number().int().min(1).max(31).nullable().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

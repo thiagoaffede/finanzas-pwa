@@ -38,6 +38,8 @@ export const billInput = z.object({
   amountCents: cents.positive(),
   status: z.enum(BILL_STATUSES).default("pending"),
   recurring: z.boolean().default(false),
+  recurrenceMonths: z.number().int().min(1).max(12).default(1),
+  category: z.string().max(60).nullish(),
 });
 export type BillInput = z.infer<typeof billInput>;
 
@@ -59,6 +61,8 @@ export const billPatch = z.object({
   dueDate: isoDate.optional(),
   billingPeriod: yearMonth.optional(),
   recurring: z.boolean().optional(),
+  recurrenceMonths: z.number().int().min(1).max(12).optional(),
+  category: z.string().max(60).nullish(),
 });
 export type BillPatch = z.infer<typeof billPatch>;
 

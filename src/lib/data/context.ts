@@ -30,6 +30,23 @@ export interface BillView {
   recurring: boolean;
   /** Serie para comparar con meses anteriores: el proveedor, o "OTRO:<nombre>". */
   series: string;
+  /** Cada cuántos meses se repite (si es gasto fijo). */
+  recurrenceMonths: number;
+  category: string | null;
+}
+
+/** Compra con tarjeta con cuotas por pagar. */
+export interface CardPurchase {
+  transactionId: string;
+  description: string;
+  purchaseDate: ISODate;
+  purchaseCents: number;
+  accountId: string | null;
+  total: number;
+  /** Cuotas que vencen desde este mes en adelante. */
+  pending: { number: number; dueDate: ISODate; amountCents: number }[];
+  remainingCents: number;
+  lastDue: ISODate;
 }
 
 export function billLabel(b: { provider: BillProvider | string; providerLabel?: string | null }) {
@@ -114,6 +131,8 @@ export interface FinanceContext {
   salaryHistory: SalaryRecord[];
   /** Transferencias entre cuentas del mes. */
   transfers: TransferView[];
+  /** Compras con tarjeta que todavía tienen cuotas. */
+  cardPurchases: CardPurchase[];
   installments: InstallmentView[];
   goals: GoalView[];
   accounts: repo.AccountView[];
@@ -130,7 +149,7 @@ export function isVariableSpend(t: { paymentMethod: PaymentMethod; billId?: stri
 
 /** Plata disponible hoy: suma de cuentas (sin tarjetas) si las cargaste; si no, el saldo de Configuración. */
 export function availableBalance(ctx: Pick<FinanceContext, "accounts" | "settings">): { cents: number; source: "cuentas" | "configuracion" } {
-  const cash = ctx.accounts.filter((a) => a.kind !== "tarjeta");
+  const cash = ctx.accounts.filter((a) => a.kind !== "tarjeta" && (a.currency ?? "ARS") === "ARS");
   if (cash.length) return { cents: cash.reduce((s, a) => s + a.balanceCents, 0), source: "cuentas" };
   return { cents: ctx.settings.openingBalanceCents, source: "configuracion" };
 }
@@ -186,7 +205,34 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     repo.listTransactions(db, { from: `${addMonths(month, -3)}-01`, to: lastDayOfMonth(addMonths(month, -1)) }),
     repo.listAccounts(db),
   ]);
-  const [salaryRows, transferRows] = await Promise.all([repo.listSalaryHistory(db), repo.listTransfers(db, month)]);
+  const [salaryRows, transferRows, cardRows] = await Promise.all([
+    repo.listSalaryHistory(db),
+    repo.listTransfers(db, month),
+    repo.listCardPurchases(db, `${month}-01`),
+  ]);
+  const byTx = new Map<string, CardPurchase>();
+  for (const r of cardRows) {
+    const p =
+      byTx.get(r.transactionId) ??
+      byTx
+        .set(r.transactionId, {
+          transactionId: r.transactionId,
+          description: r.description ?? "Compra con tarjeta",
+          purchaseDate: r.purchaseDate,
+          purchaseCents: r.purchaseCents,
+          accountId: r.accountId,
+          total: r.total,
+          pending: [],
+          remainingCents: 0,
+          lastDue: r.dueDate,
+        })
+        .get(r.transactionId)!;
+    if (r.dueDate >= `${month}-01`) {
+      p.pending.push({ number: r.number, dueDate: r.dueDate, amountCents: r.amountCents });
+      p.remainingCents += r.amountCents;
+    }
+    if (r.dueDate > p.lastDue) p.lastDue = r.dueDate;
+  }
 
   const payslips: FinanceContext["payslips"] = payslipRows.map((p) => ({
     period: p.period,
@@ -208,10 +254,12 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     label: billLabel(b),
     recurring: b.recurring,
     series: billSeries(b),
+    recurrenceMonths: b.recurrenceMonths,
+    category: b.category,
   }));
   // Historial para proyectar y comparar: servicios conocidos y gastos fijos (no los vencimientos sueltos).
   const billHistory: FinanceContext["billHistory"] = {};
-  for (const b of allBills) if (b.provider !== "OTRO" || b.recurring) (billHistory[b.series] ??= []).push({ period: b.period, amountCents: b.amountCents });
+  for (const b of allBills) if (b.provider !== "OTRO" || (b.recurring && b.recurrenceMonths === 1)) (billHistory[b.series] ??= []).push({ period: b.period, amountCents: b.amountCents });
   // En pantalla: lo impago y lo que vence este mes.
   const bills = allBills.filter((b) => !b.paid || monthOf(b.dueDate) === month);
 
@@ -254,6 +302,7 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     billHistory,
     transactions: movements.filter((t) => !t.isIncome),
     movements,
+    cardPurchases: [...byTx.values()],
     transfers: transferRows.map((t) => ({ id: t.id, date: t.date, fromAccountId: t.fromAccountId, toAccountId: t.toAccountId, amountCents: t.amountCents, note: t.note })),
     salaryHistory: salaryRows.map((r) => ({ id: r.id, period: r.period!, date: r.date, amountCents: r.amountCents, accountName: r.accountName })),
     installments: inst.map((i) => ({
@@ -311,7 +360,7 @@ export function loadDemo(today: ISODate): FinanceContext {
     ],
     rent: { ...demo.demoRentContract(today), dueDay: 10 },
     indices: demo.demoIndices(today),
-    bills: bills.map((b) => ({ id: b.id, provider: b.provider, period: b.period, dueDate: b.dueDate, amountCents: b.amountCents, paid: b.paid, label: billLabel(b), recurring: false, series: billSeries(b) })),
+    bills: bills.map((b) => ({ id: b.id, provider: b.provider, period: b.period, dueDate: b.dueDate, amountCents: b.amountCents, paid: b.paid, label: billLabel(b), recurring: false, series: billSeries(b), recurrenceMonths: 1, category: null })),
     billHistory: {
       CAMUZZI: [...demo.demoGasHistory(today), ...bills.filter((b) => b.provider === "CAMUZZI").map((b) => ({ period: b.period, amountCents: b.amountCents }))],
     },
@@ -319,6 +368,7 @@ export function loadDemo(today: ISODate): FinanceContext {
     movements: demoTx,
     salaryHistory: [],
     transfers: [],
+    cardPurchases: [],
     installments: demo
       .demoInstallmentPlans(today)
       .flatMap(installmentPlan)

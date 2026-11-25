@@ -154,6 +154,10 @@ export const bills = pgTable(
     paidAt: date("paid_at"),
     /** Gasto fijo que se repite todos los meses (gimnasio, cuota, etc.): al pagarlo se crea el del mes siguiente. */
     recurring: boolean("recurring").notNull().default(false),
+    /** Cada cuántos meses se repite (1 mensual, 12 anual). */
+    recurrenceMonths: integer("recurrence_months").notNull().default(1),
+    /** Categoría del gasto (para el presupuesto). Si falta, "Servicios". */
+    category: text("category"),
     sourceDocumentId: uuid("source_document_id").references(() => documents.id),
     rawExtractedJson: jsonb("raw_extracted_json"),
     ...timestamps,

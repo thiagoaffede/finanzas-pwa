@@ -7,7 +7,7 @@ import { TransferDialog } from "./transfer-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { MoneyInput } from "./money-input";
-import { CATEGORIES, type SalaryHint } from "./quick-expense";
+import { CATEGORIES, type BudgetHint, type SalaryHint } from "./quick-expense";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,9 @@ export function MovementsView({
   salary = null,
   nextPayday,
   transfers = [],
+  budgets = [],
 }: {
+  budgets?: BudgetHint[];
   transfers?: TransferView[];
   transactions: TxView[];
   canSave: boolean;
@@ -85,6 +87,7 @@ export function MovementsView({
           accounts={accounts}
           salary={salary}
           nextPayday={nextPayday}
+          budgets={budgets}
           onSynced={() => {
             setLocal(readQueue());
             router.refresh();

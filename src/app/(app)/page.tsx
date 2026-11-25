@@ -193,6 +193,21 @@ export default async function DashboardPage() {
                 <p className="text-xs opacity-90">{a.reason}</p>
               </li>
             ))}
+            {d.budget.rows
+              .filter((r) => r.status !== "ok")
+              .map((r) => (
+                <li key={`b-${r.category}`} className={`rounded-xl p-3 ${r.status === "over" ? "bg-bad-soft text-bad" : "bg-warn-soft text-warn"}`}>
+                  <Link href="/presupuesto" className="block">
+                    <p className="font-medium">
+                      {r.status === "over" ? `Te pasaste en ${r.category}` : `${r.category}: ${Math.round(r.pct * 100)} % del presupuesto`}
+                    </p>
+                    <p className="num text-xs opacity-90">
+                      {formatARS(r.spentCents)} de {formatARS(r.limitCents)}
+                      {r.remainingCents > 0 ? ` · quedan ${formatARS(r.remainingCents)}` : ""}
+                    </p>
+                  </Link>
+                </li>
+              ))}
             {d.nextRent && (
               <li className="rounded-xl bg-surface-muted p-3">
                 <p className="flex items-center gap-2 font-medium">
@@ -222,6 +237,7 @@ export default async function DashboardPage() {
             )}
             {d.anomalies.length === 0 &&
               !d.nextRent &&
+              !d.budget.rows.some((r) => r.status !== "ok") &&
               d.cashflow.bottlenecks.length === 0 && (
                 <li className="text-ink-3">Nada para revisar.</li>
               )}

@@ -9,7 +9,7 @@ import { BillsList, NewBillForm } from "@/components/forms/bills-list";
 import { DocumentUpload } from "@/components/forms/document-upload";
 import { DemoNotice } from "@/components/dashboard/demo-notice";
 import { loadFinanceContext } from "@/lib/data/context";
-import { billAnomalies, nextIncome, pendingSalary } from "@/lib/dashboard";
+import { billAnomalies, budgetSummary, nextIncome, pendingSalary } from "@/lib/dashboard";
 import { todayAR } from "@/lib/finance";
 
 export const metadata: Metadata = { title: "Movimientos y servicios" };
@@ -41,6 +41,7 @@ export default async function MovimientosPage() {
       <MovementsView
         transactions={ctx.movements}
         transfers={ctx.transfers}
+        budgets={budgetSummary(ctx).rows.map(({ category, limitCents, spentCents }) => ({ category, limitCents, spentCents }))}
         canSave={!ctx.demo}
         accounts={accounts}
         salary={ctx.netIncomeCents > 0 ? pendingSalary(ctx) : null}

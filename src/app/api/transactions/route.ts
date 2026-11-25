@@ -3,6 +3,7 @@ import { getDb, hasDatabase } from "@/lib/db";
 import { transactionInput } from "@/lib/schemas";
 import { createTransaction, listTransactions } from "@/lib/data/repository";
 import { todayAR } from "@/lib/finance";
+import { checkBudgetAlerts } from "@/lib/budget-alerts";
 import { demoTransactions } from "@/lib/demo-data";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,8 @@ export async function POST(req: Request) {
   const body = await parseBody(req, transactionInput);
   if (!body.ok) return body.res;
   if (!hasDatabase()) return noDatabase();
-  const created = await createTransaction(getDb(), body.data);
+  const db = getDb();
+  const created = await createTransaction(db, body.data);
+  if (created && !created.isIncome) await checkBudgetAlerts(db, todayAR()).catch(() => null);
   return created ? json(created, { status: 201 }) : json({ duplicate: true });
 }

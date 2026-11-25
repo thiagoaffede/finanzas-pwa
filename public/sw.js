@@ -4,10 +4,10 @@
  * - GET /api/*: network-first con respaldo en caché (tablero y cotizaciones offline).
  * La cola de gastos offline vive en el cliente (localStorage) y se sincroniza al volver la red.
  */
-const VERSION = "v2";
+const VERSION = "v3";
 const SHELL = `shell-${VERSION}`;
 const RUNTIME = `runtime-${VERSION}`;
-const PRECACHE = ["/", "/movimientos", "/sueldo-alquiler", "/planificacion", "/calculadoras", "/configuracion", "/manifest.webmanifest"];
+const PRECACHE = ["/", "/movimientos", "/sueldo-alquiler", "/planificacion", "/calculadoras", "/configuracion", "/presupuesto", "/mas", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));

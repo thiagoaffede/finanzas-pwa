@@ -9,6 +9,7 @@ import { addMonths, addMonthsToDate, lastDayOfMonth } from "@/lib/finance/dates"
 import { splitCents } from "@/lib/finance/money";
 import { cardInstallmentDue } from "@/lib/finance/card";
 import type { IndicesSyncResult } from "@/lib/market/official-indices";
+import type { ScalesSyncResult } from "@/lib/market/faecys-sync";
 
 /** Acceso a datos. Funciones chicas sobre Drizzle; la lógica de negocio vive en lib/finance. */
 
@@ -37,6 +38,8 @@ export interface AppSettings {
   lastBackupAt: string | null;
   /** Última actualización automática de IPC (INDEC) e ICL (BCRA). */
   indicesSync: IndicesSyncResult | null;
+  /** Última revisión de la circular de escalas de FAECYS. */
+  scalesSync: ScalesSyncResult | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -54,6 +57,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   usdManualCents: null,
   lastBackupAt: null,
   indicesSync: null,
+  scalesSync: null,
 };
 
 export async function getSettings(db: Db): Promise<AppSettings> {
@@ -89,6 +93,7 @@ export async function listScales(db: Db): Promise<(ScaleEntry & { id: string })[
     validTo: r.validTo,
     basicCents: r.basicCents,
     nonRemunerativeCents: r.nonRemunerativeCents,
+    oneTimeNonRemunerativeCents: r.oneTimeNonRemunerativeCents,
     source: r.source ?? undefined,
   }));
 }
@@ -100,6 +105,7 @@ export async function upsertScale(db: Db, e: ScaleEntry) {
     validTo: e.validTo,
     basicCents: e.basicCents,
     nonRemunerativeCents: e.nonRemunerativeCents,
+    oneTimeNonRemunerativeCents: e.oneTimeNonRemunerativeCents ?? 0,
     source: e.source ?? null,
   };
   const [row] = await db
@@ -108,6 +114,35 @@ export async function upsertScale(db: Db, e: ScaleEntry) {
     .onConflictDoUpdate({ target: [s.payrollScales.agreement, s.payrollScales.category, s.payrollScales.validFrom], set: values })
     .returning();
   return row;
+}
+
+/** Muchas escalas de una (la circular de FAECYS trae todas las categorías, mes por mes). */
+export async function upsertScales(db: Db, entries: ScaleEntry[]) {
+  const rows = entries.map((e) => ({
+    category: e.category,
+    validFrom: e.validFrom,
+    validTo: e.validTo,
+    basicCents: e.basicCents,
+    nonRemunerativeCents: e.nonRemunerativeCents,
+    oneTimeNonRemunerativeCents: e.oneTimeNonRemunerativeCents ?? 0,
+    source: e.source ?? null,
+  }));
+  for (let i = 0; i < rows.length; i += 200) {
+    await db
+      .insert(s.payrollScales)
+      .values(rows.slice(i, i + 200))
+      .onConflictDoUpdate({
+        target: [s.payrollScales.agreement, s.payrollScales.category, s.payrollScales.validFrom],
+        set: {
+          validTo: sql`excluded.valid_to`,
+          basicCents: sql`excluded.basic_cents`,
+          nonRemunerativeCents: sql`excluded.non_remunerative_cents`,
+          oneTimeNonRemunerativeCents: sql`excluded.one_time_non_remunerative_cents`,
+          source: sql`excluded.source`,
+        },
+      });
+  }
+  return rows.length;
 }
 
 export async function deleteScale(db: Db, id: string) {

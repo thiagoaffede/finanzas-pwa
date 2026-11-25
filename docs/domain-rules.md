@@ -3,11 +3,13 @@
 Este documento explica cómo calcula la app. El código vive en `src/lib/finance/` y cada
 regla tiene tests en el archivo `*.test.ts` de al lado (`npm test`).
 
-> **Importante — valores de referencia.** La app **no** trae cargadas escalas salariales,
-> sumas no remunerativas, porcentajes de aportes ni índices oficiales. Lo que aparece en
+> **Importante — valores de referencia.** La app **no** trae escalas, porcentajes de aportes ni índices
+> en el código: los baja de las fuentes o los cargás vos. Lo que aparece en
 > pantalla mientras no haya base de datos son **datos de ejemplo** (`src/lib/demo-data.ts`).
 > Antes de confiar en un número:
-> - cargá la escala vigente de Empleados de Comercio en `payroll_scales` (con su vigencia),
+> - las escalas de Empleados de Comercio se leen todos los días de la última circular de FAECYS
+>   (`src/lib/market/faecys-sync.ts` y `src/lib/parsers/faecys-scales.ts`), una fila por categoría y mes;
+>   también se pueden cargar a mano,
 > - revisá los porcentajes de `DEFAULT_COMMERCE_CONFIG` contra el acuerdo vigente,
 > - el ICL (BCRA, variable 40) y el IPC nivel general nacional (INDEC, serie `148.3_INIVELNAL_DICI_M_26`) se bajan solos
 >   todos los días a `index_values` (`src/lib/market/official-indices.ts`); también se pueden cargar a mano.
@@ -42,7 +44,7 @@ Por semana         = min(Restante, Por día × 7)
 ## Sueldo — Empleados de Comercio, Auxiliar C (`commerce-union.ts`)
 
 **Escala por vigencia.** `payroll_scales` guarda `category`, `valid_from`, `valid_to` (o vacío =
-vigente), `basic_cents` y `non_remunerative_cents`. Para un período se usa la fila vigente en esa
+vigente), `basic_cents`, `non_remunerative_cents` y `one_time_non_remunerative_cents`. Para un período se usa la fila vigente en esa
 fecha; si hay superposición, gana la de `valid_from` más reciente.
 
 **Cálculo** (todo configurable en `CommerceUnionConfig`):
@@ -53,6 +55,7 @@ fecha; si hay superposición, gana la de `valid_from` más reciente.
 | Antigüedad | 1 % del básico por año **completo** | `seniorityRatePerYear` |
 | Presentismo | 1/12 de (básico + antigüedad) si cumple | `presentismoRate` |
 | Sumas no remunerativas | Las del acuerdo vigente, con antigüedad y presentismo | `seniorityOnNonRemunerative`, `presentismoOnNonRemunerative` |
+| Suma no remunerativa por única vez | Tal cual figura en la circular, **sin** antigüedad ni presentismo | — |
 | Jubilación | 11 % sobre remunerativo | `deductions` |
 | Ley 19.032 (PAMI) | 3 % sobre remunerativo | `deductions` |
 | Obra social | 3 % sobre remunerativo + no remunerativo | `deductions` |

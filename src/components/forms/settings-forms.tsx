@@ -14,6 +14,7 @@ import type { AppSettings, PayrollProfile } from "@/lib/data/repository";
 import type { ScaleEntry } from "@/lib/finance/commerce-union";
 import type { IndexData } from "@/lib/finance/rent-adjustment";
 import type { IndicesSyncResult } from "@/lib/market/official-indices";
+import type { ScalesSyncResult } from "@/lib/market/faecys-sync";
 
 function useSave() {
   const router = useRouter();
@@ -171,7 +172,20 @@ export function PayrollProfileForm({ initial, canSave }: { initial: PayrollProfi
 
 /* ───────────── Escalas del convenio ───────────── */
 
-export function ScalesManager({ scales, canSave, defaultCategory }: { scales: (ScaleEntry & { id?: string })[]; canSave: boolean; defaultCategory?: string }) {
+const syncTime = (iso: string) => new Date(iso).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short", hourCycle: "h23", timeZone: "America/Argentina/Buenos_Aires" });
+
+export function ScalesManager({
+  scales,
+  canSave,
+  defaultCategory,
+  sync,
+}: {
+  scales: (ScaleEntry & { id?: string })[];
+  canSave: boolean;
+  defaultCategory?: string;
+  sync: ScalesSyncResult | null;
+}) {
+  const router = useRouter();
   const [category, setCategory] = useState<string>(defaultCategory ?? "AUXILIAR_C");
   const [validFrom, setValidFrom] = useState("");
   const [validTo, setValidTo] = useState("");
@@ -179,7 +193,20 @@ export function ScalesManager({ scales, canSave, defaultCategory }: { scales: (S
   const [nonRem, setNonRem] = useState(0);
   const [source, setSource] = useState("");
   const [n, setN] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const { busy, msg, setMsg, run } = useSave();
+  const shown = scales.filter((s) => s.category === category).sort((a, b) => a.validFrom.localeCompare(b.validFrom));
+
+  async function syncNow() {
+    setSyncing(true);
+    setSyncMsg(null);
+    const r = await send<ScalesSyncResult>("/api/payroll/scales/sync", "POST", {});
+    setSyncing(false);
+    if (!r.ok) return setSyncMsg({ ok: false, text: r.error });
+    setSyncMsg({ ok: true, text: `Listo: ${r.data.categories} categorías, de ${monthLabel(r.data.from ?? "")} a ${monthLabel(r.data.to ?? "")}.` });
+    router.refresh();
+  }
 
   async function add() {
     if (!validFrom || basic <= 0) return setMsg({ ok: false, text: "Completá vigencia desde y básico." });
@@ -203,87 +230,126 @@ export function ScalesManager({ scales, canSave, defaultCategory }: { scales: (S
       <CardHeader>
         <div>
           <CardTitle>Escalas del convenio (CCT 130/75)</CardTitle>
-          <CardDescription>Cargá los básicos y sumas no remunerativas de cada acuerdo con su vigencia. Verificalos contra la escala oficial.</CardDescription>
+          <CardDescription>Se cargan solas desde la circular de escalas que publica FAECYS después de cada acuerdo paritario. La app la revisa todos los días.</CardDescription>
         </div>
       </CardHeader>
 
-      {scales.length === 0 ? (
-        <p className="mb-4 text-sm text-ink-3">Todavía no cargaste escalas.</p>
+      <div className="mb-4 rounded-xl bg-surface-muted p-3 text-sm">
+        {sync?.title ? (
+          <>
+            <p className="text-xs text-ink-3">Circular cargada</p>
+            <p className="font-medium">
+              {sync.link ? (
+                <a href={sync.link} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+                  {sync.title}
+                </a>
+              ) : (
+                sync.title
+              )}
+            </p>
+            {sync.from && sync.to && (
+              <p className="text-[11px] text-ink-3">
+                {sync.agreement ? `Acuerdo ${sync.agreement} · ` : ""}de {monthLabel(sync.from)} a {monthLabel(sync.to)} · {sync.categories} categorías
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-ink-3">Todavía no se leyó ninguna circular.</p>
+        )}
+      </div>
+
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <Button variant="outline" disabled={!canSave || syncing} onClick={syncNow}>
+          <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> {syncing ? "Actualizando…" : "Actualizar ahora"}
+        </Button>
+        <span className="text-xs text-ink-3">{sync ? `Última revisión: ${syncTime(sync.at)}` : ""}</span>
+        {syncMsg ? <Status msg={syncMsg} /> : sync && !sync.ok && sync.error && <span className="text-xs text-bad">No se pudo revisar FAECYS: {sync.error}</span>}
+      </div>
+
+      <Field label="Categoría" className="mb-3 max-w-xs">
+        <Select value={category} onChange={(e) => setCategory(e.target.value)}>
+          {COMMERCE_CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {categoryLabel(c)}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
+      {shown.length === 0 ? (
+        <p className="mb-4 text-sm text-ink-3">No hay escalas de {categoryLabel(category)}.</p>
       ) : (
-        <div className="mb-5 overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
-            <thead>
-              <tr className="text-left text-[11px] text-ink-3">
-                <th className="py-1 font-normal">Categoría</th>
-                <th className="py-1 font-normal">Vigencia</th>
-                <th className="py-1 text-right font-normal">Básico</th>
-                <th className="py-1 text-right font-normal">No remun.</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {scales.map((s) => (
-                <tr key={s.id ?? `${s.category}-${s.validFrom}`}>
-                  <td className="py-2">{categoryLabel(s.category)}</td>
-                  <td className="py-2 text-ink-2">
-                    {dateLabel(s.validFrom)} {s.validTo ? `al ${dateLabel(s.validTo)}` : "en adelante"}
-                  </td>
-                  <td className="num py-2 text-right">{formatARS(s.basicCents)}</td>
-                  <td className="num py-2 text-right">{formatARS(s.nonRemunerativeCents)}</td>
-                  <td className="py-2 pl-2 text-right">
-                    {canSave && s.id && (
+        <table className="mb-5 w-full text-xs sm:text-sm">
+          <thead>
+            <tr className="text-left text-[11px] text-ink-3">
+              <th className="py-1 font-normal">Mes</th>
+              <th className="py-1 pl-2 text-right font-normal">Básico</th>
+              <th className="py-1 pl-2 text-right font-normal">No rem.</th>
+              <th className="py-1 pl-2 text-right font-normal">Única vez</th>
+              {canSave && <th className="hidden w-8 sm:table-cell" />}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {shown.map((s) => (
+              <tr key={s.id ?? `${s.category}-${s.validFrom}`} title={s.source}>
+                <td className="py-2 pr-1 text-ink-2">
+                  {s.validTo && s.validFrom.slice(0, 7) === s.validTo.slice(0, 7) && s.validFrom.endsWith("-01")
+                    ? monthLabel(s.validFrom.slice(0, 7))
+                    : s.validTo
+                      ? `${dateLabel(s.validFrom)} al ${dateLabel(s.validTo)}`
+                      : `desde ${s.validFrom.endsWith("-01") ? monthLabel(s.validFrom.slice(0, 7)) : dateLabel(s.validFrom)}`}
+                </td>
+                <td className="num whitespace-nowrap py-2 pl-2 text-right">{formatARS(s.basicCents)}</td>
+                <td className="num whitespace-nowrap py-2 pl-2 text-right">{s.nonRemunerativeCents ? formatARS(s.nonRemunerativeCents) : "—"}</td>
+                <td className="num whitespace-nowrap py-2 pl-2 text-right">{s.oneTimeNonRemunerativeCents ? formatARS(s.oneTimeNonRemunerativeCents) : "—"}</td>
+                {canSave && (
+                  <td className="hidden py-1 pl-1 text-right sm:table-cell">
+                    {s.id && (
                       <Button variant="ghost" size="sm" aria-label="Borrar" disabled={busy} onClick={() => run(`/api/payroll/scales/${s.id}`, "DELETE", undefined, "Borrada.")}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     )}
                   </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Field label="Categoría">
-          <Select value={category} onChange={(e) => setCategory(e.target.value)}>
-            {COMMERCE_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {categoryLabel(c)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Vigente desde">
-          <Input type="date" value={validFrom} onChange={(e) => setValidFrom(e.target.value)} />
-        </Field>
-        <Field label="Hasta (opcional)">
-          <Input type="date" value={validTo} onChange={(e) => setValidTo(e.target.value)} />
-        </Field>
-        <Field label="Básico mensual">
-          <MoneyInput key={`b${n}`} valueCents={0} onChange={setBasic} />
-        </Field>
-        <Field label="Suma no remunerativa">
-          <MoneyInput key={`n${n}`} valueCents={0} onChange={setNonRem} />
-        </Field>
-        <Field label="Fuente (opcional)">
-          <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="Acuerdo FAECYS …" />
-        </Field>
-      </div>
-      <div className="mt-4 flex items-center gap-3">
-        <Button disabled={!canSave || busy} onClick={add}>
-          Agregar escala
-        </Button>
-        <NoDb canSave={canSave} />
-        <Status msg={msg} />
-      </div>
+      <details>
+        <summary className="cursor-pointer text-sm font-medium text-ink-2">Cargar una escala a mano</summary>
+        <p className="mt-2 mb-3 text-xs text-ink-3">Para la categoría elegida arriba. Si después sale una circular con el mismo mes, la pisa.</p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Field label="Vigente desde">
+            <Input type="date" value={validFrom} onChange={(e) => setValidFrom(e.target.value)} />
+          </Field>
+          <Field label="Hasta (opcional)">
+            <Input type="date" value={validTo} onChange={(e) => setValidTo(e.target.value)} />
+          </Field>
+          <Field label="Fuente (opcional)">
+            <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="Acuerdo FAECYS …" />
+          </Field>
+          <Field label="Básico mensual">
+            <MoneyInput key={`b${n}`} valueCents={0} onChange={setBasic} />
+          </Field>
+          <Field label="Suma no remunerativa">
+            <MoneyInput key={`n${n}`} valueCents={0} onChange={setNonRem} />
+          </Field>
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <Button disabled={!canSave || busy} onClick={add}>
+            Agregar escala
+          </Button>
+          <NoDb canSave={canSave} />
+          <Status msg={msg} />
+        </div>
+      </details>
     </Card>
   );
 }
 
 /* ───────────── Índices ICL / IPC ───────────── */
-
-const syncTime = (iso: string) => new Date(iso).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short", hourCycle: "h23", timeZone: "America/Argentina/Buenos_Aires" });
 
 export function IndicesManager({ indices, canSave, sync }: { indices: IndexData; canSave: boolean; sync: IndicesSyncResult | null }) {
   const router = useRouter();

@@ -8,9 +8,7 @@ import { loadFinanceContext } from "@/lib/data/context";
 import { PushToggle } from "@/components/forms/push-toggle";
 import { authEnabled } from "@/lib/auth";
 import { todayAR } from "@/lib/finance";
-import { after } from "next/server";
-import { getDb } from "@/lib/db";
-import { indicesSyncDue, syncOfficialIndices } from "@/lib/market/official-indices";
+import { refreshStaleData } from "@/lib/market/refresh";
 
 export const metadata: Metadata = { title: "Configuración" };
 export const dynamic = "force-dynamic";
@@ -18,8 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function ConfiguracionPage() {
   const ctx = await loadFinanceContext(todayAR());
   const canSave = !ctx.demo;
-  // Respaldo del cron diario: si los índices quedaron viejos, se actualizan después de mostrar la página.
-  if (canSave && indicesSyncDue(ctx.settings.indicesSync)) after(() => syncOfficialIndices(getDb(), { today: ctx.today }).catch(() => undefined));
+  if (canSave) refreshStaleData(ctx.settings, ctx.today);
 
   return (
     <div className="space-y-6">
@@ -29,7 +26,7 @@ export default async function ConfiguracionPage() {
       <PushToggle canSave={canSave} />
       <SettingsForm initial={ctx.settings} canSave={canSave} usesAccounts={ctx.accounts.some((a) => a.kind !== "tarjeta")} />
       <PayrollProfileForm initial={ctx.profile} canSave={canSave} />
-      <ScalesManager scales={ctx.scales} canSave={canSave} defaultCategory={ctx.profile?.category} />
+      <ScalesManager scales={ctx.scales} canSave={canSave} defaultCategory={ctx.profile?.category} sync={ctx.settings.scalesSync} />
       <IndicesManager indices={ctx.indices} canSave={canSave} sync={ctx.settings.indicesSync} />
 
       <Card>

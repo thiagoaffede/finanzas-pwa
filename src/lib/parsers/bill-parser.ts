@@ -56,6 +56,7 @@ export function parseBillExtraction(raw: unknown): ParseResult<BillInput> {
       amountCents,
       status: "pending",
     recurring: false,
+    recurrenceMonths: 1,
     },
   };
 }

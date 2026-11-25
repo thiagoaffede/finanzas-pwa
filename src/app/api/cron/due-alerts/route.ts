@@ -3,6 +3,7 @@ import { getDb, hasDatabase } from "@/lib/db";
 import { loadFromDb } from "@/lib/data/context";
 import { dueItems } from "@/lib/dashboard";
 import { buildDueAlert } from "@/lib/alerts";
+import { checkBudgetAlerts } from "@/lib/budget-alerts";
 import { pushConfigured, sendToAll } from "@/lib/push";
 import { todayAR } from "@/lib/finance";
 import { timingSafeEqual } from "node:crypto";
@@ -24,7 +25,8 @@ export async function GET(req: Request) {
 
   const db = getDb();
   const ctx = await loadFromDb(db, todayAR());
-  const alert = buildDueAlert(dueItems(ctx), ctx.today);
-  if (!alert) return json({ sent: 0, reason: "nada que avisar" });
-  return json({ alert: alert.title, ...(await sendToAll(db, alert)) });
+  const budget = await checkBudgetAlerts(db, ctx.today).catch((e) => ({ error: String(e) }));
+  const alert = buildDueAlert(dueItems(ctx), ctx.today, ctx.settings.reminderDays);
+  if (!alert) return json({ sent: 0, reason: "nada que avisar", budget });
+  return json({ alert: alert.title, ...(await sendToAll(db, alert)), budget });
 }

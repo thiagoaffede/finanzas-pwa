@@ -7,6 +7,7 @@ import type { IndexData, RentContract } from "@/lib/finance/rent-adjustment";
 import type { BillInput, BillPatch, TransactionInput, TransactionPatch, TransferInput } from "@/lib/schemas";
 import { addMonths, addMonthsToDate, lastDayOfMonth } from "@/lib/finance/dates";
 import { splitCents } from "@/lib/finance/money";
+import { cardInstallmentDue } from "@/lib/finance/card";
 
 /** Acceso a datos. Funciones chicas sobre Drizzle; la lógica de negocio vive en lib/finance. */
 
@@ -21,6 +22,14 @@ export interface AppSettings {
   minBalanceCents: number;
   /** Día hábil del mes en que cobrás el sueldo (3 = tercer día hábil). */
   paydayBusinessDay: number;
+  /** Tope mensual por categoría (centavos). */
+  budgets: Record<string, number>;
+  /** Días antes de cada vencimiento en que avisamos (0 = el mismo día). */
+  reminderDays: number[];
+  /** Avisos de presupuesto ya enviados: "YYYY-MM:Categoría" → 80 | 100. */
+  budgetAlerts: Record<string, number>;
+  /** Cotización para valuar dólares: "bolsa" (MEP), "oficial", "blue", "cripto". */
+  usdHouse: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -31,6 +40,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   openingBalanceCents: 0,
   minBalanceCents: 0,
   paydayBusinessDay: 3,
+  budgets: {},
+  reminderDays: [3, 1, 0],
+  budgetAlerts: {},
+  usdHouse: "bolsa",
 };
 
 export async function getSettings(db: Db): Promise<AppSettings> {
@@ -232,7 +245,7 @@ export async function billHistory(db: Db, provider: BillProvider) {
     .orderBy(asc(s.bills.billingPeriod));
 }
 
-export async function createBill(db: Db, b: Omit<BillInput, "recurring"> & { recurring?: boolean; rawExtractedJson?: unknown; sourceDocumentId?: string | null }) {
+export async function createBill(db: Db, b: Omit<BillInput, "recurring" | "recurrenceMonths"> & { recurring?: boolean; recurrenceMonths?: number; rawExtractedJson?: unknown; sourceDocumentId?: string | null }) {
   const [row] = await db.insert(s.bills).values(b).returning();
   if (b.sourceDocumentId) await updateDocument(db, b.sourceDocumentId, { status: "confirmed" });
   return row;
@@ -276,14 +289,15 @@ export async function setBillPaid(
   await db.insert(s.transactions).values({
     date: paidAt,
     amountCents,
-    category: "Servicios",
+    category: bill.category ?? "Servicios",
     description: billName(bill),
     accountId: opts.accountId ?? null,
     paymentMethod: "debito",
     billId: id,
   });
   if (bill.recurring) {
-    const nextPeriod = addMonths(bill.billingPeriod, 1);
+    const every = Math.max(1, bill.recurrenceMonths);
+    const nextPeriod = addMonths(bill.billingPeriod, every);
     const same = and(
       eq(s.bills.provider, bill.provider),
       bill.providerLabel ? eq(s.bills.providerLabel, bill.providerLabel) : sql`${s.bills.providerLabel} is null`,
@@ -296,9 +310,11 @@ export async function setBillPaid(
         providerLabel: bill.providerLabel,
         accountNumber: bill.accountNumber,
         billingPeriod: nextPeriod,
-        dueDate: addMonthsToDate(bill.dueDate, 1),
+        dueDate: addMonthsToDate(bill.dueDate, every),
         amountCents,
         recurring: true,
+        recurrenceMonths: every,
+        category: bill.category,
       });
     }
   }
@@ -311,6 +327,27 @@ function billName(b: { provider: string; providerLabel: string | null }) {
 }
 
 // ─── Movimientos y cuotas ───────────────────────────────────────────────────
+/** Cuotas (o el único pago con tarjeta) de un gasto: se pagan con el resumen, según el cierre de la tarjeta. */
+async function writeInstallments(db: Db, tx: { id: string; date: string; amountCents: number; installmentsCount: number; paymentMethod: string; accountId: string | null }) {
+  await db.delete(s.installments).where(eq(s.installments.transactionId, tx.id));
+  const onCard = tx.paymentMethod === "cuotas" || tx.paymentMethod === "tarjeta";
+  if (!onCard) return;
+  const count = tx.paymentMethod === "cuotas" ? tx.installmentsCount : 1;
+  const [card] = tx.accountId
+    ? await db.select({ closingDay: s.accounts.closingDay, dueDay: s.accounts.dueDay }).from(s.accounts).where(eq(s.accounts.id, tx.accountId))
+    : [];
+  const amounts = splitCents(tx.amountCents, count);
+  await db.insert(s.installments).values(
+    amounts.map((amountCents, i) => ({
+      transactionId: tx.id,
+      number: i + 1,
+      total: count,
+      dueDate: cardInstallmentDue(tx.date, i + 1, card),
+      amountCents,
+    })),
+  );
+}
+
 export async function createTransaction(db: Db, tx: TransactionInput) {
   const installmentsCount = tx.paymentMethod === "cuotas" ? tx.installmentsCount : 1;
   const [created] = await db
@@ -319,19 +356,7 @@ export async function createTransaction(db: Db, tx: TransactionInput) {
     .onConflictDoNothing({ target: s.transactions.clientId })
     .returning();
   if (!created) return null; // ya existía (reintento de la cola offline)
-
-  if (installmentsCount > 1) {
-    const amounts = splitCents(tx.amountCents, installmentsCount);
-    await db.insert(s.installments).values(
-      amounts.map((amountCents, i) => ({
-        transactionId: created.id,
-        number: i + 1,
-        total: installmentsCount,
-        dueDate: addMonthsToDate(tx.date, i + 1),
-        amountCents,
-      })),
-    );
-  }
+  if (!created.isIncome) await writeInstallments(db, created);
   return created;
 }
 
@@ -347,6 +372,30 @@ export async function listTransactions(db: Db, opts: { month?: YearMonth; from?:
     .where(conds.length ? and(...conds) : undefined)
     .orderBy(desc(s.transactions.date), desc(s.transactions.createdAt))
     .limit(opts.limit ?? 1000);
+}
+
+/**
+ * Compras con tarjeta que todavía tienen cuotas por pagar (desde `from`), con todas sus cuotas
+ * para saber cuántas van y cuánto falta.
+ */
+export async function listCardPurchases(db: Db, from: ISODate) {
+  const open = db.select({ id: s.installments.transactionId }).from(s.installments).where(gte(s.installments.dueDate, from));
+  return db
+    .select({
+      transactionId: s.installments.transactionId,
+      number: s.installments.number,
+      total: s.installments.total,
+      dueDate: s.installments.dueDate,
+      amountCents: s.installments.amountCents,
+      description: s.transactions.description,
+      purchaseDate: s.transactions.date,
+      purchaseCents: s.transactions.amountCents,
+      accountId: s.transactions.accountId,
+    })
+    .from(s.installments)
+    .innerJoin(s.transactions, eq(s.installments.transactionId, s.transactions.id))
+    .where(sql`${s.installments.transactionId} in ${open}`)
+    .orderBy(asc(s.installments.dueDate));
 }
 
 /** Cuotas futuras con la descripción del gasto. */
@@ -372,13 +421,7 @@ export async function updateTransaction(db: Db, id: string, patch: TransactionPa
   const [row] = await db.update(s.transactions).set({ ...patch, updatedAt: new Date() }).where(eq(s.transactions.id, id)).returning();
   if (!row) return null;
   if (row.billId && patch.amountCents) await db.update(s.bills).set({ amountCents: patch.amountCents, updatedAt: new Date() }).where(eq(s.bills.id, row.billId));
-  if (row.installmentsCount > 1 && (patch.amountCents || patch.date)) {
-    await db.delete(s.installments).where(eq(s.installments.transactionId, id));
-    const amounts = splitCents(row.amountCents, row.installmentsCount);
-    await db.insert(s.installments).values(
-      amounts.map((amountCents, i) => ({ transactionId: id, number: i + 1, total: row.installmentsCount, dueDate: addMonthsToDate(row.date, i + 1), amountCents })),
-    );
-  }
+  if (!row.isIncome && (patch.amountCents || patch.date || patch.accountId !== undefined)) await writeInstallments(db, row);
   return row;
 }
 
@@ -510,6 +553,9 @@ export interface AccountView {
   balanceSetAt: string;
   /** Saldo actual: saldo fijado + ingresos − gastos cargados después. En tarjetas, negativo = deuda. */
   balanceCents: number;
+  currency: "ARS" | "USD";
+  closingDay: number | null;
+  dueDay: number | null;
 }
 
 export async function listAccounts(db: Db): Promise<AccountView[]> {
@@ -548,6 +594,9 @@ export async function listAccounts(db: Db): Promise<AccountView[]> {
     openingBalanceCents: r.openingBalanceCents,
     balanceSetAt: r.balanceSetAt.toISOString(),
     balanceCents: r.openingBalanceCents + (delta.get(r.id) ?? 0),
+    currency: r.currency,
+    closingDay: r.closingDay,
+    dueDay: r.dueDay,
   }));
 }
 
@@ -567,7 +616,7 @@ export async function setAccountBalance(db: Db, id: string, balanceCents: number
   return row ?? null;
 }
 
-export async function updateAccount(db: Db, id: string, patch: { name?: string; archived?: boolean }) {
+export async function updateAccount(db: Db, id: string, patch: { name?: string; archived?: boolean; closingDay?: number | null; dueDay?: number | null }) {
   const [row] = await db.update(s.accounts).set({ ...patch, updatedAt: new Date() }).where(eq(s.accounts.id, id)).returning();
   return row ?? null;
 }

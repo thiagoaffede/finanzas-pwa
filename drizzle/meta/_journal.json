@@ -36,6 +36,13 @@
       "when": 1795606827381,
       "tag": "0004_transfers",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795609151916,
+      "tag": "0005_budgets_recurrence",
+      "breakpoints": true
     }
   ]
 }

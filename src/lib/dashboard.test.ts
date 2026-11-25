@@ -53,9 +53,9 @@ describe("cuánto puedo gastar sin cobro este mes", () => {
   });
 
   it("con cuentas reparte la plata hasta el cobro del 3/12", () => {
-    const account = { id: "a", name: "Banco", kind: "banco" as const, openingBalanceCents: 0, balanceSetAt: "", balanceCents: 300_000_00 };
+    const account = { id: "a", name: "Banco", kind: "banco" as const, openingBalanceCents: 0, balanceSetAt: "", balanceCents: 300_000_00, currency: "ARS" as const, closingDay: null, dueDay: null };
     const card = { ...account, id: "t", kind: "tarjeta" as const, balanceCents: -50_000_00 };
-    const ctx = { ...base(), accounts: [account, card], bills: [{ id: "b", provider: "EDES" as const, period: "2026-11", dueDate: "2026-11-28", amountCents: 50_000_00, paid: false, label: "EDES (luz)", recurring: false, series: "EDES" }] };
+    const ctx = { ...base(), accounts: [account, card], bills: [{ id: "b", provider: "EDES" as const, period: "2026-11", dueDate: "2026-11-28", amountCents: 50_000_00, paid: false, label: "EDES (luz)", recurring: false, series: "EDES", recurrenceMonths: 1, category: null }] };
     const d = buildDashboard(ctx);
     expect(d.basis).toBe("saldo");
     expect(d.safe.daysLeft).toBe(10); // 24/11 al 3/12 inclusive
@@ -78,14 +78,14 @@ describe("gastos sueltos, vencimientos para más adelante y sueldo cobrado", () 
   });
 
   it("un vencimiento 'lo pago más adelante' entra una sola vez, en su mes", () => {
-    const later = { id: "b", provider: "OTRO" as const, period: "2026-12", dueDate: "2026-12-03", amountCents: 40_000_00, paid: false, label: "Gimnasio", recurring: false, series: "OTRO:gimnasio" };
+    const later = { id: "b", provider: "OTRO" as const, period: "2026-12", dueDate: "2026-12-03", amountCents: 40_000_00, paid: false, label: "Gimnasio", recurring: false, series: "OTRO:gimnasio", recurrenceMonths: 1, category: "Deporte" };
     const m = months({ ...base(), transactions: [], bills: [later] });
     expect(m.find((x) => x.month === "2026-12")!.byKind.bill).toBe(40_000_00);
     expect(m.find((x) => x.month === "2027-01")!.byKind.bill ?? 0).toBe(0);
   });
 
   it("un gasto fijo se proyecta todos los meses", () => {
-    const gym = { id: "b", provider: "OTRO" as const, period: "2026-12", dueDate: "2026-12-10", amountCents: 40_000_00, paid: false, label: "Gimnasio", recurring: true, series: "OTRO:gimnasio" };
+    const gym = { id: "b", provider: "OTRO" as const, period: "2026-12", dueDate: "2026-12-10", amountCents: 40_000_00, paid: false, label: "Gimnasio", recurring: true, series: "OTRO:gimnasio", recurrenceMonths: 1, category: "Deporte" };
     const m = months({ ...base(), transactions: [], bills: [gym] });
     expect(m.find((x) => x.month === "2027-02")!.byKind.bill).toBeGreaterThan(40_000_00);
   });
@@ -94,5 +94,15 @@ describe("gastos sueltos, vencimientos para más adelante y sueldo cobrado", () 
     const ctx = { ...ctxFor("2026-12-03"), salaryHistory: [{ id: "s", period: "2026-11", date: "2026-12-03", amountCents: 430_000_00, accountName: "Banco" }] };
     expect(incomeIn(ctx, "2026-12")).toBe(Math.round((500_000_00 * 44) / 184));
     expect(nextIncome(ctx).salary.date).toBe("2027-01-06");
+  });
+});
+
+describe("gastos fijos no mensuales", () => {
+  it("un gasto trimestral entra solo en los meses que toca", () => {
+    const c = ctxFor("2026-11-24");
+    const seguro = { id: "s", provider: "OTRO" as const, period: "2026-11", dueDate: "2026-11-10", amountCents: 120_000_00, paid: true, label: "Seguro", recurring: true, series: "OTRO:seguro", recurrenceMonths: 3, category: "Hogar" };
+    const ctx = { ...c, demo: false, bills: [seguro], billHistory: {}, installments: [], goals: [], rent: null, transactions: [], avgVariableSpendCents: 0 } as FinanceContext;
+    const m = projectCashflow(buildCashflowInput(ctx)).months;
+    expect(m.filter((x) => (x.byKind.bill ?? 0) > 0).map((x) => x.month)).toEqual(["2027-02"]);
   });
 });

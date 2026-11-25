@@ -3,6 +3,7 @@ import { requireDb } from "@/lib/api-db";
 import { deleteBill, setBillPaid, updateBill } from "@/lib/data/repository";
 import { billPatch, billPayment } from "@/lib/schemas";
 import { todayAR } from "@/lib/finance";
+import { checkBudgetAlerts } from "@/lib/budget-alerts";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -17,6 +18,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (!db) return res;
     const { paid, accountId, amountCents, date } = body.data;
     const row = await setBillPaid(db, id, paid, date ?? todayAR(), { accountId, amountCents });
+    if (row && paid) await checkBudgetAlerts(db, todayAR()).catch(() => null);
     return row ? json(row) : json({ error: "No existe" }, { status: 404 });
   }
   const body = await parseBody(req, billPatch);

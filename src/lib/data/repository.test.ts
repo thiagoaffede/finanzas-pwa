@@ -103,6 +103,31 @@ describe("repositorio (PGlite)", () => {
     await repo.updateAccount(db, mp.id, { archived: true });
   });
 
+  it("tarjeta: cuotas según el cierre, y el pago único también se proyecta", async () => {
+    const visa = await repo.createAccount(db, { name: "Visa T", kind: "tarjeta", balanceCents: 0 });
+    await repo.updateAccount(db, visa.id, { closingDay: 20, dueDay: 5 });
+    const base = { isIncome: false, installmentsCount: 1, owedCents: 0, accountId: visa.id };
+    const uno = await repo.createTransaction(db, { ...base, date: "2026-11-24", amountCents: 9_000_00, paymentMethod: "tarjeta", description: "Libro" });
+    const cuotas = await repo.createTransaction(db, { ...base, date: "2026-11-10", amountCents: 30_000_00, paymentMethod: "cuotas", installmentsCount: 3, description: "Zapatillas" });
+    const rows = await repo.listCardPurchases(db, "2026-11-01");
+    expect(rows.filter((r) => r.transactionId === uno!.id).map((r) => r.dueDate)).toEqual(["2027-01-05"]);
+    expect(rows.filter((r) => r.transactionId === cuotas!.id).map((r) => r.dueDate)).toEqual(["2026-12-05", "2027-01-05", "2027-02-05"]);
+    await repo.deleteTransaction(db, uno!.id);
+    await repo.deleteTransaction(db, cuotas!.id);
+    await repo.updateAccount(db, visa.id, { archived: true });
+  });
+
+  it("gasto fijo trimestral: el próximo se crea 3 meses después con su categoría", async () => {
+    const seg = await repo.createBill(db, { provider: "OTRO", providerLabel: "Seguro", billingPeriod: "2026-11", dueDate: "2026-11-15", amountCents: 60_000_00, status: "pending", recurring: true, recurrenceMonths: 3, category: "Hogar" });
+    await repo.setBillPaid(db, seg.id, true, TODAY);
+    const next = (await repo.listBills(db, { from: "2027-01-01" })).find((b) => b.providerLabel === "Seguro");
+    expect(next).toMatchObject({ billingPeriod: "2027-02", dueDate: "2027-02-15", recurrenceMonths: 3, category: "Hogar" });
+    const pago = (await repo.listTransactions(db, { month: "2026-11" })).find((t) => t.billId === seg.id);
+    expect(pago?.category).toBe("Hogar");
+    await repo.deleteBill(db, next!.id);
+    await repo.deleteBill(db, seg.id);
+  });
+
   it("movimientos: editar y borrar", async () => {
     const t = await repo.createTransaction(db, { date: TODAY, amountCents: 5_000_00, isIncome: false, paymentMethod: "debito", installmentsCount: 1, owedCents: 0, description: "Café" });
     await repo.updateTransaction(db, t!.id, { amountCents: 6_000_00, description: "Café y medialunas" });

@@ -13,7 +13,22 @@ import { formatARS, todayAR } from "@/lib/finance";
 import { dateLabel, monthLabel } from "@/lib/labels";
 import type { PaymentMethod } from "@/types/finance";
 
-export const CATEGORIES = ["Comida", "Hogar", "Traslados", "Salud", "Deporte", "Salidas", "Ropa", "Servicios", "Otros"];
+export const CATEGORIES = ["Comida", "Hogar", "Traslados", "Salud", "Deporte", "Salidas", "Ropa", "Servicios", "Suscripciones", "Educación", "Regalos", "Otros"];
+
+export const FREQUENCIES: { months: number; label: string }[] = [
+  { months: 1, label: "Todos los meses" },
+  { months: 2, label: "Cada 2 meses" },
+  { months: 3, label: "Cada 3 meses" },
+  { months: 6, label: "Cada 6 meses" },
+  { months: 12, label: "Una vez por año" },
+];
+
+/** Presupuesto del mes por categoría (para avisar al guardar un gasto). */
+export interface BudgetHint {
+  category: string;
+  limitCents: number;
+  spentCents: number;
+}
 
 /** Sueldo que falta cobrar, para precargar el ingreso. */
 export interface SalaryHint {
@@ -31,7 +46,9 @@ export function QuickExpense({
   accounts = [],
   salary = null,
   nextPayday,
+  budgets = [],
 }: {
+  budgets?: BudgetHint[];
   onQueued?: (tx: QueuedTransaction) => void;
   onSynced?: () => void;
   accounts?: { id: string; name: string; kind: string }[];
@@ -52,6 +69,9 @@ export function QuickExpense({
   const [later, setLater] = useState(false);
   const [laterDate, setLaterDate] = useState(nextPayday ?? "");
   const [repeat, setRepeat] = useState(false);
+  const [every, setEvery] = useState(1);
+  const [budgetMsg, setBudgetMsg] = useState<{ text: string; tone: "good" | "warn" | "bad" } | null>(null);
+  const [spentExtra, setSpentExtra] = useState<Record<string, number>>({});
   const [pending, setPending] = useState(0);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +114,23 @@ export function QuickExpense({
     setFormKey((k) => k + 1); // reinicia el input de monto con el valor precargado
   }
 
+  /** Después de guardar un gasto: cuánto queda del presupuesto de esa categoría. */
+  function budgetFeedback(cat: string, cents: number) {
+    const b = budgets.find((x) => x.category === cat);
+    if (!b || b.limitCents <= 0) return setBudgetMsg(null);
+    const spent = b.spentCents + (spentExtra[cat] ?? 0) + cents;
+    setSpentExtra((m) => ({ ...m, [cat]: (m[cat] ?? 0) + cents }));
+    const left = b.limitCents - spent;
+    const pct = Math.round((spent / b.limitCents) * 100);
+    setBudgetMsg(
+      left < 0
+        ? { text: `Te pasaste ${formatARS(-left)} del presupuesto de ${cat}.`, tone: "bad" }
+        : pct >= 80
+          ? { text: `Ojo: ya usaste el ${pct} % de ${cat}. Te quedan ${formatARS(left)}.`, tone: "warn" }
+          : { text: `${cat}: te quedan ${formatARS(left)} este mes.`, tone: "good" },
+    );
+  }
+
   function reset(msg: string) {
     setSaved(msg);
     setTimeout(() => setSaved(null), 2200);
@@ -104,6 +141,7 @@ export function QuickExpense({
     setIsSalary(false);
     setLater(false);
     setRepeat(false);
+    setEvery(1);
     setFormKey((k) => k + 1);
   }
 
@@ -130,6 +168,8 @@ export function QuickExpense({
         dueDate: due,
         amountCents: amount,
         recurring: repeat,
+        recurrenceMonths: repeat ? every : 1,
+        category,
       });
       if (r.ok && !later) {
         const paid = await send(`/api/bills/${r.data.id}`, "PATCH", { paid: true, accountId: accountId || null, amountCents: amount });
@@ -138,7 +178,8 @@ export function QuickExpense({
       setBusy(false);
       if (!r.ok) return setError(r.error);
       onSynced?.();
-      return reset(later ? `Anotado para pagar el ${dateLabel(due)}` : "Guardado. El mes que viene te lo recuerdo.");
+      if (!later) budgetFeedback(category, amount);
+      return reset(later ? `Anotado para pagar el ${dateLabel(due)}` : "Guardado. Te lo recuerdo antes del próximo vencimiento.");
     }
 
     const tx: QueuedTransaction = {
@@ -162,6 +203,8 @@ export function QuickExpense({
     onQueued?.(tx);
     setPending(await flushQueue());
     onSynced?.();
+    if (!income) budgetFeedback(category, amount - (tx.owedCents ?? 0));
+    else setBudgetMsg(null);
     reset("Guardado");
   }
 
@@ -257,10 +300,21 @@ export function QuickExpense({
                 <input type="checkbox" className="mt-0.5 h-4 w-4" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} />
                 <span>
                   Se repite todos los meses
-                  <span className="block text-[11px] text-ink-3">Gasto fijo (gimnasio, cuota): te lo recuerdo cada mes y ajustás el monto al pagarlo.</span>
+                  <span className="block text-[11px] text-ink-3">Gasto fijo (gimnasio, suscripción, seguro): te lo recuerdo y ajustás el monto al pagarlo.</span>
                 </span>
               </label>
             </div>
+            {repeat && (
+              <Field label="¿Cada cuánto?">
+                <Select value={every} onChange={(e) => setEvery(Number(e.target.value))}>
+                  {FREQUENCIES.map((f) => (
+                    <option key={f.months} value={f.months}>
+                      {f.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
             {later && (
               <Field label="¿Cuándo lo pagás?" hint={nextPayday ? `Tu próximo cobro es el ${dateLabel(nextPayday)}.` : undefined}>
                 <Input type="date" value={laterDate} min={todayAR()} onChange={(e) => setLaterDate(e.target.value)} />
@@ -301,6 +355,9 @@ export function QuickExpense({
           </Button>
           {saved && saved !== "Guardado" && <span className="text-xs text-good">{saved}</span>}
           {error && <span className="text-xs text-bad">{error}</span>}
+          {budgetMsg && !error && (
+            <span className={`w-full text-xs ${budgetMsg.tone === "bad" ? "text-bad" : budgetMsg.tone === "warn" ? "text-warn" : "text-ink-3"}`}>{budgetMsg.text}</span>
+          )}
         </div>
       </form>
     </Card>

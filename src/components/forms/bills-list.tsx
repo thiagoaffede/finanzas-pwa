@@ -14,6 +14,7 @@ import { formatARS } from "@/lib/finance/money";
 import { dateLabel, monthLabel } from "@/lib/labels";
 import { send } from "@/lib/client-api";
 import type { BillView } from "@/lib/data/context";
+import { CATEGORIES, FREQUENCIES } from "./quick-expense";
 
 const TONE = { paid: "good", overdue: "bad", today: "bad", next3: "warn", week: "accent", later: "neutral" } as const;
 type Account = { id: string; name: string; kind: string };
@@ -151,12 +152,14 @@ function PayBill({ bill, accounts, today, onClose }: { bill: BillView; accounts:
 }
 
 /** Editar monto, vencimiento o si se repite; o borrar. */
-function BillEditor({ bill, onClose }: { bill: BillView; onClose: () => void }) {
+export function BillEditor({ bill, onClose }: { bill: BillView; onClose: () => void }) {
   const router = useRouter();
   const [label, setLabel] = useState(bill.label);
   const [amount, setAmount] = useState(bill.amountCents);
   const [dueDate, setDueDate] = useState(bill.dueDate);
   const [recurring, setRecurring] = useState(bill.recurring);
+  const [every, setEvery] = useState(bill.recurrenceMonths || 1);
+  const [category, setCategory] = useState(bill.category ?? "Servicios");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const custom = bill.provider === "OTRO";
@@ -169,6 +172,8 @@ function BillEditor({ bill, onClose }: { bill: BillView; onClose: () => void }) 
       dueDate,
       billingPeriod: custom ? dueDate.slice(0, 7) : undefined,
       recurring,
+      recurrenceMonths: recurring ? every : 1,
+      category,
       ...(custom ? { providerLabel: label.trim() || null } : {}),
     });
     setBusy(false);
@@ -201,10 +206,28 @@ function BillEditor({ bill, onClose }: { bill: BillView; onClose: () => void }) 
         <Field label="Vence">
           <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </Field>
+        <Field label="Categoría (para el presupuesto)">
+          <Select value={category} onChange={(e) => setCategory(e.target.value)}>
+            {[...new Set([...CATEGORIES, category])].map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </Select>
+        </Field>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" className="h-4 w-4" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
-          Se repite todos los meses
+          Se repite (gasto fijo)
         </label>
+        {recurring && (
+          <Field label="¿Cada cuánto?">
+            <Select value={every} onChange={(e) => setEvery(Number(e.target.value))}>
+              {FREQUENCIES.map((f) => (
+                <option key={f.months} value={f.months}>
+                  {f.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
       </div>
       {error && <p className="mt-3 text-xs text-bad">{error}</p>}
       <div className="mt-5 flex items-center gap-2">
@@ -226,6 +249,8 @@ export function NewBillForm({ canSave, today }: { canSave: boolean; today: strin
   const [amount, setAmount] = useState(0);
   const [dueDate, setDueDate] = useState(today);
   const [recurring, setRecurring] = useState(true);
+  const [every, setEvery] = useState(1);
+  const [category, setCategory] = useState("Servicios");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [n, setN] = useState(0);
@@ -242,6 +267,8 @@ export function NewBillForm({ canSave, today }: { canSave: boolean; today: strin
       dueDate,
       amountCents: amount,
       recurring,
+      recurrenceMonths: recurring ? every : 1,
+      category,
     });
     setBusy(false);
     if (!r.ok) return setError(r.error);
@@ -256,7 +283,7 @@ export function NewBillForm({ canSave, today }: { canSave: boolean; today: strin
       <CardHeader>
         <div>
           <CardTitle>Agregar vencimiento</CardTitle>
-          <CardDescription>Para gastos fijos sin boleta (gimnasio, cuota, seguro) o algo que pagás más adelante.</CardDescription>
+          <CardDescription>Gastos fijos sin boleta (gimnasio, suscripciones, seguro, cuota del club) o algo que pagás más adelante.</CardDescription>
         </div>
       </CardHeader>
       <form onSubmit={save} className="grid gap-3">
@@ -271,10 +298,29 @@ export function NewBillForm({ canSave, today }: { canSave: boolean; today: strin
             <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           </Field>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" className="h-4 w-4" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
-          Se repite todos los meses
-        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Categoría">
+            <Select value={category} onChange={(e) => setCategory(e.target.value)}>
+              {CATEGORIES.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Se repite">
+            <Select value={recurring ? every : 0} onChange={(e) => {
+              const v = Number(e.target.value);
+              setRecurring(v > 0);
+              if (v > 0) setEvery(v);
+            }}>
+              <option value={0}>No, es una sola vez</option>
+              {FREQUENCIES.map((f) => (
+                <option key={f.months} value={f.months}>
+                  {f.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
         <div className="flex items-center gap-3">
           <Button type="submit" disabled={!canSave || busy}>
             <Plus className="h-4 w-4" /> Agregar

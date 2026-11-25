@@ -1,12 +1,26 @@
-import { LayoutDashboard, ListOrdered, Briefcase, Target, Calculator, Settings, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, ListOrdered, Briefcase, Target, Calculator, Settings, PiggyBank, MoreHorizontal, type LucideIcon } from "lucide-react";
 
-export const NAV_ITEMS: { href: string; label: string; short: string; icon: LucideIcon }[] = [
-  { href: "/", label: "Tablero", short: "Inicio", icon: LayoutDashboard },
-  { href: "/movimientos", label: "Movimientos y servicios", short: "Movim.", icon: ListOrdered },
-  { href: "/sueldo-alquiler", label: "Sueldo y alquiler", short: "Sueldo", icon: Briefcase },
-  { href: "/planificacion", label: "Objetivos y planificación", short: "Planes", icon: Target },
-  { href: "/calculadoras", label: "Calculadoras", short: "Calcular", icon: Calculator },
+export interface NavItem {
+  href: string;
+  label: string;
+  short: string;
+  icon: LucideIcon;
+  /** Aparece en la barra de abajo del celu (el resto, en "Más"). */
+  bottom?: boolean;
+  /** Descripción para la página "Más". */
+  hint?: string;
+}
+
+export const NAV_ITEMS: NavItem[] = [
+  { href: "/", label: "Tablero", short: "Inicio", icon: LayoutDashboard, bottom: true },
+  { href: "/movimientos", label: "Movimientos y servicios", short: "Movim.", icon: ListOrdered, bottom: true },
+  { href: "/presupuesto", label: "Presupuesto y vencimientos", short: "Presup.", icon: PiggyBank, bottom: true },
+  { href: "/planificacion", label: "Objetivos y planificación", short: "Planes", icon: Target, bottom: true },
+  { href: "/sueldo-alquiler", label: "Sueldo y alquiler", short: "Sueldo", icon: Briefcase, hint: "Recibos, historial de sueldos y ajuste del alquiler" },
+  { href: "/calculadoras", label: "Calculadoras", short: "Calcular", icon: Calculator, hint: "Cuotas vs. contado, plazo fijo y más" },
 ];
 
-/** Solo en la barra lateral (en el celu se llega desde el ícono del encabezado). */
-export const SETTINGS_ITEM = { href: "/configuracion", label: "Configuración", short: "Ajustes", icon: Settings };
+/** Solo en la barra lateral (en el celu se llega desde el ícono del encabezado o desde "Más"). */
+export const SETTINGS_ITEM: NavItem = { href: "/configuracion", label: "Configuración", short: "Ajustes", icon: Settings, hint: "Sueldo, avisos, escalas e índices" };
+
+export const MORE_ITEM: NavItem = { href: "/mas", label: "Más", short: "Más", icon: MoreHorizontal };

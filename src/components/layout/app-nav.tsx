@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NAV_ITEMS, SETTINGS_ITEM } from "./nav-items";
+import { MORE_ITEM, NAV_ITEMS, SETTINGS_ITEM } from "./nav-items";
 
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -56,8 +56,11 @@ export function BottomNav() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
       <ul className="mx-auto grid max-w-lg grid-cols-5">
-        {NAV_ITEMS.map(({ href, short, icon: Icon }) => {
-          const active = isActive(pathname, href);
+        {[...NAV_ITEMS.filter((i) => i.bottom), MORE_ITEM].map(({ href, short, icon: Icon }) => {
+          const active =
+            href === MORE_ITEM.href
+              ? isActive(pathname, href) || [...NAV_ITEMS.filter((i) => !i.bottom), SETTINGS_ITEM].some((i) => isActive(pathname, i.href))
+              : isActive(pathname, href);
           return (
             <li key={href}>
               <Link href={href} className={cn("flex flex-col items-center gap-1 py-2.5 text-[11px] text-ink-3", active && "text-ink")}>

@@ -8,16 +8,14 @@ import { DemoNotice } from "@/components/dashboard/demo-notice";
 import { loadFinanceContext, seniorityYears } from "@/lib/data/context";
 import { formatARS, formatPct, monthOf, todayAR } from "@/lib/finance";
 import { dateLabel, monthLabel } from "@/lib/labels";
-import { after } from "next/server";
-import { getDb } from "@/lib/db";
-import { indicesSyncDue, syncOfficialIndices } from "@/lib/market/official-indices";
+import { refreshStaleData } from "@/lib/market/refresh";
 
 export const metadata: Metadata = { title: "Sueldo y alquiler" };
 export const dynamic = "force-dynamic";
 
 export default async function SueldoAlquilerPage() {
   const ctx = await loadFinanceContext(todayAR());
-  if (!ctx.demo && indicesSyncDue(ctx.settings.indicesSync)) after(() => syncOfficialIndices(getDb(), { today: ctx.today }).catch(() => undefined));
+  if (!ctx.demo) refreshStaleData(ctx.settings, ctx.today);
   const initialRent = ctx.rent ?? {
     startDate: `${monthOf(ctx.today)}-01`,
     baseRentCents: 0,

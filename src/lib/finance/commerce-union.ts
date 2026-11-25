@@ -43,6 +43,8 @@ export interface ScaleEntry {
   basicCents: Cents;
   /** Sumas fijas no remunerativas del acuerdo vigente (jornada completa). */
   nonRemunerativeCents: Cents;
+  /** Suma no remunerativa "por única vez" (no lleva antigüedad ni presentismo). */
+  oneTimeNonRemunerativeCents?: Cents;
   /** Texto libre: número de acuerdo/resolución de homologación. */
   source?: string;
 }
@@ -188,6 +190,11 @@ export function estimateCommerceSalary(input: CommerceEstimateInput): CommerceEs
       lines.push({ code: "NR_PRES", label: "Presentismo s/ no rem.", type: "nonrem", amountCents: nrPres });
       nonRemunerativeCents += nrPres;
     }
+  }
+  const oneTime = mulCents(scale.oneTimeNonRemunerativeCents ?? 0, hoursFactor);
+  if (oneTime > 0) {
+    lines.push({ code: "NR_UNICA", label: "Suma no remunerativa por única vez", type: "nonrem", amountCents: oneTime });
+    nonRemunerativeCents += oneTime;
   }
   for (const e of (input.extras ?? []).filter((x) => !x.remunerative)) {
     lines.push({ code: "NR_EXT", label: e.label, type: "nonrem", amountCents: e.amountCents });

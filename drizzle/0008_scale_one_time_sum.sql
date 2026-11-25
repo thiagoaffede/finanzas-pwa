@@ -1,0 +1,1 @@
+ALTER TABLE "payroll_scales" ADD COLUMN "one_time_non_remunerative_cents" bigint DEFAULT 0 NOT NULL;

@@ -180,6 +180,8 @@ export const payrollScales = pgTable(
     validTo: date("valid_to"),
     basicCents: cents("basic_cents").notNull(),
     nonRemunerativeCents: cents("non_remunerative_cents").notNull().default(0),
+    /** Suma no remunerativa "por única vez": no lleva antigüedad ni presentismo. */
+    oneTimeNonRemunerativeCents: cents("one_time_non_remunerative_cents").notNull().default(0),
     source: text("source"),
   },
   (t) => [uniqueIndex("payroll_scales_cat_from_idx").on(t.agreement, t.category, t.validFrom)],

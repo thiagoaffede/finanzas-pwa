@@ -13,3 +13,4 @@ export * from "./price-history";
 export * from "./payroll-calendar";
 export * from "./budget";
 export * from "./card";
+export * from "./report";

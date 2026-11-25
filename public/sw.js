@@ -4,10 +4,10 @@
  * - GET /api/*: network-first con respaldo en caché (tablero y cotizaciones offline).
  * La cola de gastos offline vive en el cliente (localStorage) y se sincroniza al volver la red.
  */
-const VERSION = "v3";
+const VERSION = "v4";
 const SHELL = `shell-${VERSION}`;
 const RUNTIME = `runtime-${VERSION}`;
-const PRECACHE = ["/", "/movimientos", "/sueldo-alquiler", "/planificacion", "/calculadoras", "/configuracion", "/presupuesto", "/mas", "/manifest.webmanifest"];
+const PRECACHE = ["/", "/movimientos", "/sueldo-alquiler", "/planificacion", "/calculadoras", "/configuracion", "/presupuesto", "/mas", "/reporte", "/backup", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
@@ -48,12 +48,14 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // Descargas (backup, exportaciones, archivos): siempre de la red y sin guardar copia.
+  if (["/api/backup", "/api/export", "/api/documents"].some((p) => url.pathname.startsWith(p))) return;
 
   if (request.mode === "navigate") {
     event.respondWith(networkFirst(request, "/"));
   } else if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/")) {
     event.respondWith(cacheFirst(request));
-  } else if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/export") && !url.pathname.startsWith("/api/documents")) {
+  } else if (url.pathname.startsWith("/api/")) {
     event.respondWith(networkFirst(request));
   }
 });

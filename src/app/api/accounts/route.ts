@@ -8,6 +8,7 @@ const input = z.object({
   name: z.string().trim().min(1).max(60),
   kind: z.enum(accounts.kind.enumValues),
   balanceCents: z.number().int(),
+  currency: z.enum(["ARS", "USD"]).default("ARS"),
 });
 
 export async function GET() {

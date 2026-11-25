@@ -6,7 +6,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, Input } from "@/components/ui/input";
+import { Field, Input, Select } from "@/components/ui/input";
 import { MoneyInput } from "./money-input";
 import { send } from "@/lib/client-api";
 
@@ -17,6 +17,7 @@ export function NewGoalForm({ canSave }: { canSave: boolean }) {
   const [target, setTarget] = useState(0);
   const [monthly, setMonthly] = useState(0);
   const [date, setDate] = useState("");
+  const [currency, setCurrency] = useState<"ARS" | "USD">("ARS");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +31,7 @@ export function NewGoalForm({ canSave }: { canSave: boolean }) {
       targetCents: target,
       monthlyContributionCents: monthly || null,
       targetDate: date || null,
+      currency,
     });
     setBusy(false);
     if (!r.ok) return setError(r.error);
@@ -52,12 +54,18 @@ export function NewGoalForm({ canSave }: { canSave: boolean }) {
         <Field label="Nombre">
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
         </Field>
+        <Field label="Moneda" hint={currency === "USD" ? "Ahorro en dólares: se valúa al tipo de cambio del día." : undefined}>
+          <Select value={currency} onChange={(e) => setCurrency(e.target.value as "ARS" | "USD")}>
+            <option value="ARS">Pesos</option>
+            <option value="USD">Dólares</option>
+          </Select>
+        </Field>
         <Field label="Monto objetivo">
           {/* key: reinicia el texto del input después de guardar */}
-          <MoneyInput key={`t${target === 0}`} valueCents={target} onChange={setTarget} />
+          <MoneyInput key={`t${target === 0}${currency}`} valueCents={target} onChange={setTarget} currency={currency} />
         </Field>
         <Field label="Aporte mensual (opcional)">
-          <MoneyInput key={`m${monthly === 0}`} valueCents={monthly} onChange={setMonthly} />
+          <MoneyInput key={`m${monthly === 0}${currency}`} valueCents={monthly} onChange={setMonthly} currency={currency} />
         </Field>
         <Field label="Fecha objetivo (opcional)">
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -75,7 +83,7 @@ export function NewGoalForm({ canSave }: { canSave: boolean }) {
 }
 
 /** Sumar (o restar, con monto negativo) un aporte a un objetivo. */
-export function GoalContribution({ goalId, canSave }: { goalId: string; canSave: boolean }) {
+export function GoalContribution({ goalId, canSave, currency = "ARS" }: { goalId: string; canSave: boolean; currency?: "ARS" | "USD" }) {
   const router = useRouter();
   const [amount, setAmount] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -99,7 +107,7 @@ export function GoalContribution({ goalId, canSave }: { goalId: string; canSave:
   return (
     <div className="mt-4 flex items-center gap-2">
       <div className="flex-1">
-        <MoneyInput key={n} valueCents={0} onChange={setAmount} placeholder="Sumar aporte" />
+        <MoneyInput key={n} valueCents={0} onChange={setAmount} placeholder="Sumar aporte" currency={currency} />
       </div>
       <Button variant="outline" size="sm" disabled={busy || !amount} onClick={add}>
         Sumar
@@ -114,7 +122,7 @@ export function GoalEditor({
   goal,
   canSave,
 }: {
-  goal: { id: string; name: string; targetCents: number; monthlyContributionCents: number; targetDate: string | null };
+  goal: { id: string; name: string; targetCents: number; monthlyContributionCents: number; targetDate: string | null; currency?: "ARS" | "USD" };
   canSave: boolean;
 }) {
   const router = useRouter();
@@ -167,10 +175,10 @@ export function GoalEditor({
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
           </Field>
           <Field label="Monto objetivo">
-            <MoneyInput valueCents={target} onChange={setTarget} />
+            <MoneyInput valueCents={target} onChange={setTarget} currency={goal.currency} />
           </Field>
           <Field label="Aporte mensual">
-            <MoneyInput valueCents={monthly} onChange={setMonthly} />
+            <MoneyInput valueCents={monthly} onChange={setMonthly} currency={goal.currency} />
           </Field>
           <Field label="Fecha objetivo (opcional)">
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />

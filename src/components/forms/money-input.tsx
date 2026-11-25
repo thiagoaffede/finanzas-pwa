@@ -5,15 +5,27 @@ import { parseAmountToCents } from "@/lib/finance/money";
 import { useState } from "react";
 
 /** Input de pesos que acepta "1.234,56" y devuelve centavos. */
-export function MoneyInput({ valueCents, onChange, placeholder, id }: { valueCents: number; onChange: (c: number) => void; placeholder?: string; id?: string }) {
+export function MoneyInput({
+  valueCents,
+  onChange,
+  placeholder,
+  id,
+  currency = "ARS",
+}: {
+  valueCents: number;
+  onChange: (c: number) => void;
+  placeholder?: string;
+  id?: string;
+  currency?: "ARS" | "USD";
+}) {
   const [text, setText] = useState(valueCents ? (valueCents / 100).toLocaleString("es-AR") : "");
   return (
     <div className="relative">
-      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-3">$</span>
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-3">{currency === "USD" ? "US$" : "$"}</span>
       <Input
         id={id}
         inputMode="decimal"
-        className="num pl-7"
+        className={currency === "USD" ? "num pl-11" : "num pl-7"}
         value={text}
         placeholder={placeholder ?? "0"}
         onChange={(e) => {

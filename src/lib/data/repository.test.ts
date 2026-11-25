@@ -8,6 +8,10 @@ import type { Db } from "./db-type";
 import * as repo from "./repository";
 import { loadFromDb } from "./context";
 import { buildDashboard } from "@/lib/dashboard";
+import { strFromU8, unzipSync } from "fflate";
+import { createBackup, parseBackup, restoreBackup } from "@/lib/backup";
+import { workbookFromDb, workbookSheets } from "@/lib/export-workbook";
+import { buildXlsx } from "@/lib/xlsx";
 
 /** Base Postgres en memoria con las mismas migraciones que Neon. */
 async function freshDb(): Promise<Db> {
@@ -101,6 +105,22 @@ describe("repositorio (PGlite)", () => {
     expect((await bal())[mp.id]).toBe(10_000_00);
     await repo.updateAccount(db, banco.id, { archived: true });
     await repo.updateAccount(db, mp.id, { archived: true });
+  });
+
+  it("compra de dólares: sale en pesos y entra en dólares; la cuenta USD no suma al disponible en pesos", async () => {
+    const banco = await repo.createAccount(db, { name: "Banco FX", kind: "banco", balanceCents: 2_000_000_00 });
+    const usd = await repo.createAccount(db, { name: "Dólares", kind: "reserva", balanceCents: 100_00, currency: "USD" });
+    await repo.createTransfer(db, { date: TODAY, fromAccountId: banco.id, toAccountId: usd.id, amountCents: 1_200_000_00, toAmountCents: 1_000_00 });
+    const accounts = await repo.listAccounts(db);
+    const byId = Object.fromEntries(accounts.map((a) => [a.id, a]));
+    expect(byId[banco.id].balanceCents).toBe(800_000_00);
+    expect(byId[usd.id].balanceCents).toBe(1_100_00);
+    expect(byId[usd.id].currency).toBe("USD");
+    const g = await repo.createGoal(db, { name: "Viaje", targetCents: 3_000_00, currency: "USD" });
+    expect((await repo.listGoals(db)).find((x) => x.id === g.id)?.currency).toBe("USD");
+    await repo.updateGoal(db, g.id, { archived: true });
+    await repo.updateAccount(db, banco.id, { archived: true });
+    await repo.updateAccount(db, usd.id, { archived: true });
   });
 
   it("tarjeta: cuotas según el cierre, y el pago único también se proyecta", async () => {
@@ -253,5 +273,52 @@ describe("repositorio (PGlite)", () => {
     await repo.deletePushSubscription(db, sub.endpoint);
     subs = await repo.listPushSubscriptions(db);
     expect(subs).toHaveLength(0);
+  });
+
+  it("excel: arma un .xlsx con todas las hojas", async () => {
+    const file = buildXlsx(workbookSheets(await workbookFromDb(db, "2026-11")));
+    const files = unzipSync(file);
+    const wb = strFromU8(files["xl/workbook.xml"]);
+    for (const name of ["Movimientos", "Servicios y fijos", "Cuotas", "Cuentas", "Transferencias", "Objetivos", "Sueldos", "Resumen mensual"]) expect(wb).toContain(`name="${name}"`);
+    expect(Object.keys(files).filter((f) => f.startsWith("xl/worksheets/"))).toHaveLength(8);
+    expect(strFromU8(files["xl/worksheets/sheet1.xml"])).toContain("<sheetData>");
+  });
+
+  it("backup: restaura todo como estaba, conserva archivos y suscripciones", async () => {
+    await repo.savePushSubscription(db, { endpoint: "https://push.example/keep", p256dh: "k", auth: "a" });
+    const before = await createBackup(db);
+    const nTx = before.tables.transactions.length;
+    expect(nTx).toBeGreaterThan(0);
+    expect(before.tables.documents.every((d) => d.contentBase64 === null)).toBe(true);
+    // Ida y vuelta por JSON, como el archivo real.
+    const check = parseBackup(JSON.parse(JSON.stringify(before)));
+    expect(check.ok).toBe(true);
+    if (!check.ok) return;
+
+    await repo.createTransaction(db, { date: TODAY, amountCents: 1_00, category: "Otros", paymentMethod: "contado", installmentsCount: 1, isIncome: false, owedCents: 0 } as never);
+    await repo.saveSettings(db, { monthlyInflation: 0.09 });
+    await restoreBackup(db, check.backup);
+
+    const after = await createBackup(db, { withFiles: true });
+    expect(after.tables.transactions).toHaveLength(nTx);
+    expect((await repo.getSettings(db)).monthlyInflation).toBeCloseTo(0.03);
+    expect(after.tables.accounts.length).toBe(before.tables.accounts.length);
+    expect(after.tables.installments.length).toBe(before.tables.installments.length);
+    const withContent = after.tables.documents.filter((d) => d.contentBase64);
+    expect(withContent.length).toBe(before.tables.documents.length);
+    expect((await repo.listPushSubscriptions(db)).map((x) => x.endpoint)).toContain("https://push.example/keep");
+  });
+
+  it("backup: rechaza archivos que no son de la app y vuelve atrás si falla", async () => {
+    expect(parseBackup({ hola: 1 }).ok).toBe(false);
+    expect(parseBackup({ app: "finanzas-pwa", version: 1, exportedAt: "x", tables: { otra: [] } }).ok).toBe(false);
+    const good = await createBackup(db);
+    const n = good.tables.transactions.length;
+    // Un movimiento que apunta a una cuenta inexistente rompe la restauración a mitad de camino.
+    const broken = parseBackup(JSON.parse(JSON.stringify({ ...good, tables: { ...good.tables, transactions: [...good.tables.transactions, { ...good.tables.transactions[0], id: "00000000-0000-4000-8000-000000000001", clientId: null, accountId: "00000000-0000-4000-8000-000000000999" }] } })));
+    expect(broken.ok).toBe(true);
+    if (!broken.ok) return;
+    await expect(restoreBackup(db, broken.backup)).rejects.toThrow(/quedaron como estaban/);
+    expect((await createBackup(db)).tables.transactions).toHaveLength(n);
   });
 });

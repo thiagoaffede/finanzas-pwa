@@ -30,6 +30,10 @@ export interface AppSettings {
   budgetAlerts: Record<string, number>;
   /** Cotización para valuar dólares: "bolsa" (MEP), "oficial", "blue", "cripto". */
   usdHouse: string;
+  /** Cotización cargada a mano (centavos por dólar) por si no hay conexión con la API. */
+  usdManualCents: number | null;
+  /** Cuándo se bajó el último backup completo (ISO). */
+  lastBackupAt: string | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -44,6 +48,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   reminderDays: [3, 1, 0],
   budgetAlerts: {},
   usdHouse: "bolsa",
+  usdManualCents: null,
+  lastBackupAt: null,
 };
 
 export async function getSettings(db: Db): Promise<AppSettings> {
@@ -465,7 +471,7 @@ export async function listGoals(db: Db) {
   return goals.map((g) => ({ ...g, savedCents: byGoal.get(g.id) ?? 0 }));
 }
 
-export async function createGoal(db: Db, g: { name: string; targetCents: number; targetDate?: ISODate | null; monthlyContributionCents?: number | null }) {
+export async function createGoal(db: Db, g: { name: string; targetCents: number; targetDate?: ISODate | null; monthlyContributionCents?: number | null; currency?: "ARS" | "USD" }) {
   const [row] = await db.insert(s.goals).values(g).returning();
   return row;
 }
@@ -473,7 +479,7 @@ export async function createGoal(db: Db, g: { name: string; targetCents: number;
 export async function updateGoal(
   db: Db,
   id: string,
-  patch: { name?: string; targetCents?: number; targetDate?: ISODate | null; monthlyContributionCents?: number | null; archived?: boolean },
+  patch: { name?: string; targetCents?: number; targetDate?: ISODate | null; monthlyContributionCents?: number | null; archived?: boolean; currency?: "ARS" | "USD" },
 ) {
   const [row] = await db.update(s.goals).set({ ...patch, updatedAt: new Date() }).where(eq(s.goals.id, id)).returning();
   return row ?? null;
@@ -580,7 +586,7 @@ export async function listAccounts(db: Db): Promise<AccountView[]> {
     .where(sql`${s.transfers.createdAt} > ${s.accounts.balanceSetAt}`)
     .groupBy(s.transfers.fromAccountId);
   const ins = await db
-    .select({ accountId: s.transfers.toAccountId, total: sql<string>`coalesce(sum(${s.transfers.amountCents}), 0)` })
+    .select({ accountId: s.transfers.toAccountId, total: sql<string>`coalesce(sum(coalesce(${s.transfers.toAmountCents}, ${s.transfers.amountCents})), 0)` })
     .from(s.transfers)
     .innerJoin(s.accounts, eq(s.transfers.toAccountId, s.accounts.id))
     .where(sql`${s.transfers.createdAt} > ${s.accounts.balanceSetAt}`)
@@ -600,8 +606,11 @@ export async function listAccounts(db: Db): Promise<AccountView[]> {
   }));
 }
 
-export async function createAccount(db: Db, a: { name: string; kind: AccountKind; balanceCents: number }) {
-  const [row] = await db.insert(s.accounts).values({ name: a.name, kind: a.kind, openingBalanceCents: a.balanceCents, balanceSetAt: new Date() }).returning();
+export async function createAccount(db: Db, a: { name: string; kind: AccountKind; balanceCents: number; currency?: "ARS" | "USD" }) {
+  const [row] = await db
+    .insert(s.accounts)
+    .values({ name: a.name, kind: a.kind, currency: a.currency ?? "ARS", openingBalanceCents: a.balanceCents, balanceSetAt: new Date() })
+    .returning();
   return row;
 }
 

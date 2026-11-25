@@ -8,11 +8,11 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { MoneyInput } from "./money-input";
 import { send } from "@/lib/client-api";
-import { formatARS } from "@/lib/finance/money";
+import { formatARS, formatUSD } from "@/lib/finance/money";
 import { todayAR } from "@/lib/finance/dates";
 import type { TransferView } from "@/lib/data/context";
 
-type Account = { id: string; name: string; kind: string; balanceCents?: number };
+type Account = { id: string; name: string; kind: string; balanceCents?: number; currency?: "ARS" | "USD" };
 
 /**
  * Pasar plata entre cuentas propias: banco ↔ billetera, retirar o depositar efectivo,
@@ -23,20 +23,27 @@ export function TransferDialog({ accounts, transfer, onClose }: { accounts: Acco
   const [from, setFrom] = useState(transfer?.fromAccountId ?? "");
   const [to, setTo] = useState(transfer?.toAccountId ?? "");
   const [amount, setAmount] = useState(transfer?.amountCents ?? 0);
+  const [toAmount, setToAmount] = useState(transfer?.toAmountCents ?? 0);
   const [date, setDate] = useState(transfer?.date ?? todayAR());
   const [note, setNote] = useState(transfer?.note ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fromAcc = accounts.find((a) => a.id === from);
   const toAcc = accounts.find((a) => a.id === to);
+  const fromCur = fromAcc?.currency ?? "ARS";
+  const toCur = toAcc?.currency ?? "ARS";
+  const fx = Boolean(fromAcc && toAcc && fromCur !== toCur);
+  // Precio implícito del dólar en la operación (pesos por dólar).
+  const implied = fx && amount > 0 && toAmount > 0 ? (fromCur === "ARS" ? (amount / toAmount) * 100 : (toAmount / amount) * 100) : null;
 
   async function save() {
     if (!from || !to) return setError("Elegí de dónde sale y a dónde va.");
     if (from === to) return setError("Elegí dos cuentas distintas.");
     if (amount <= 0) return setError("Poné un monto.");
+    if (fx && toAmount <= 0) return setError(`Poné cuánto ${toCur === "USD" ? "dólares" : "pesos"} recibiste.`);
     setBusy(true);
     setError(null);
-    const body = { fromAccountId: from, toAccountId: to, amountCents: amount, date, note: note.trim() || null };
+    const body = { fromAccountId: from, toAccountId: to, amountCents: amount, toAmountCents: fx ? toAmount : null, date, note: note.trim() || null };
     const r = transfer ? await send(`/api/transfers/${transfer.id}`, "PATCH", body) : await send("/api/transfers", "POST", body);
     setBusy(false);
     if (!r.ok) return setError(r.error);
@@ -60,12 +67,15 @@ export function TransferDialog({ accounts, transfer, onClose }: { accounts: Acco
       .map((a) => (
         <option key={a.id} value={a.id}>
           {a.name}
-          {a.balanceCents !== undefined && a.kind !== "tarjeta" ? ` (${formatARS(a.balanceCents)})` : ""}
+          {a.balanceCents !== undefined && a.kind !== "tarjeta" ? ` (${(a.currency === "USD" ? formatUSD : formatARS)(a.balanceCents)})` : ""}
         </option>
       ));
 
-  const hint =
-    toAcc?.kind === "tarjeta"
+  const hint = fx
+    ? toCur === "USD"
+      ? "Compra de dólares: poné los pesos que salen y los dólares que entran."
+      : "Venta de dólares: poné los dólares que salen y los pesos que entran."
+    : toAcc?.kind === "tarjeta"
       ? "Pago de tarjeta: baja la deuda sin contarlo como gasto otra vez."
       : fromAcc?.kind === "efectivo"
         ? "Depósito de efectivo."
@@ -106,9 +116,14 @@ export function TransferDialog({ accounts, transfer, onClose }: { accounts: Acco
           </Select>
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Monto">
-            <MoneyInput valueCents={amount} onChange={setAmount} />
+          <Field label={fx ? "Sale" : "Monto"}>
+            <MoneyInput key={`a${fromCur}`} valueCents={amount} onChange={setAmount} currency={fromCur} />
           </Field>
+          {fx && (
+            <Field label="Entra" hint={implied ? `Dólar a ${formatARS(Math.round(implied))}` : undefined}>
+              <MoneyInput key={`b${toCur}`} valueCents={toAmount} onChange={setToAmount} currency={toCur} />
+            </Field>
+          )}
           <Field label="Fecha">
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>

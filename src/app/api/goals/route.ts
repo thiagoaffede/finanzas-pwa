@@ -8,6 +8,7 @@ const goalInput = z.object({
   targetCents: z.number().int().positive(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
   monthlyContributionCents: z.number().int().min(0).nullish(),
+  currency: z.enum(["ARS", "USD"]).default("ARS"),
 });
 
 export async function GET() {

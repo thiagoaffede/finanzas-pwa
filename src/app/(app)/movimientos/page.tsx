@@ -17,7 +17,8 @@ export const dynamic = "force-dynamic";
 
 export default async function MovimientosPage() {
   const ctx = await loadFinanceContext(todayAR());
-  const accounts = ctx.accounts.map(({ id, name, kind }) => ({ id, name, kind }));
+  const accounts = ctx.accounts.map(({ id, name, kind, currency, balanceCents }) => ({ id, name, kind, currency, balanceCents }));
+  const pesoAccounts = accounts.filter((a) => a.currency !== "USD");
   const next = ctx.netIncomeCents > 0 ? nextIncome(ctx) : null;
   const anomalies = Object.fromEntries(billAnomalies(ctx).filter((a) => a.isAnomaly).map((a) => [a.billId, a.reason]));
 
@@ -57,7 +58,7 @@ export default async function MovimientosPage() {
               <CardDescription>Boletas y gastos fijos impagos, y los de este mes.</CardDescription>
             </div>
           </CardHeader>
-          <BillsList bills={ctx.bills} today={ctx.today} anomalies={anomalies} canSave={!ctx.demo} accounts={accounts} />
+          <BillsList bills={ctx.bills} today={ctx.today} anomalies={anomalies} canSave={!ctx.demo} accounts={pesoAccounts} />
         </Card>
         <div className="space-y-4">
           <DocumentUpload kind="bill" canSave={!ctx.demo} />

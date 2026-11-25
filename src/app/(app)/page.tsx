@@ -22,7 +22,7 @@ import { DemoNotice } from "@/components/dashboard/demo-notice";
 import { buildDashboard } from "@/lib/dashboard";
 import { loadFinanceContext } from "@/lib/data/context";
 import { SetupNotice } from "@/components/dashboard/setup-notice";
-import { formatARS, formatPct, todayAR } from "@/lib/finance";
+import { diffDays, formatARS, formatPct, todayAR } from "@/lib/finance";
 import type { DueBucket } from "@/types/finance";
 import { dateLabel, monthLabel } from "@/lib/labels";
 
@@ -57,6 +57,8 @@ const INCOME_HINT = {
 export default async function DashboardPage() {
   const ctx = await loadFinanceContext(todayAR());
   const d = buildDashboard(ctx);
+  const lastBackup = ctx.settings.lastBackupAt?.slice(0, 10) ?? null;
+  const backupDue = !ctx.demo && ctx.movements.length > 0 && (!lastBackup || diffDays(lastBackup, ctx.today) > 30);
   const s = d.safe;
   const status = STATUS_COPY[s.status];
   const used =
@@ -235,7 +237,16 @@ export default async function DashboardPage() {
                 </p>
               </li>
             )}
+            {backupDue && (
+              <li className="rounded-xl bg-surface-muted p-3">
+                <Link href="/backup" className="block">
+                  <p className="font-medium">{lastBackup ? `Tu último backup es del ${dateLabel(lastBackup)}` : "Todavía no bajaste un backup"}</p>
+                  <p className="text-xs text-ink-2">Bajá una copia de tus datos por las dudas: es un toque.</p>
+                </Link>
+              </li>
+            )}
             {d.anomalies.length === 0 &&
+              !backupDue &&
               !d.nextRent &&
               !d.budget.rows.some((r) => r.status !== "ok") &&
               d.cashflow.bottlenecks.length === 0 && (

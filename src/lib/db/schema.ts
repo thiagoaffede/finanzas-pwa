@@ -114,6 +114,8 @@ export const transfers = pgTable(
       .notNull()
       .references(() => accounts.id),
     amountCents: cents("amount_cents").notNull(),
+    /** Lo que entra en la cuenta destino si es otra moneda (compra/venta de dólares). */
+    toAmountCents: cents("to_amount_cents"),
     note: text("note"),
     ...timestamps,
   },

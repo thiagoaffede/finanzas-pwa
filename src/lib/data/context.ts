@@ -58,6 +58,15 @@ export interface TxView {
   salaryPeriod?: string | null;
 }
 
+export interface TransferView {
+  id: string;
+  date: ISODate;
+  fromAccountId: string;
+  toAccountId: string;
+  amountCents: number;
+  note: string | null;
+}
+
 export interface SalaryRecord {
   id: string;
   period: YearMonth;
@@ -103,6 +112,8 @@ export interface FinanceContext {
   movements: TxView[];
   /** Sueldos cobrados y registrados. */
   salaryHistory: SalaryRecord[];
+  /** Transferencias entre cuentas del mes. */
+  transfers: TransferView[];
   installments: InstallmentView[];
   goals: GoalView[];
   accounts: repo.AccountView[];
@@ -175,7 +186,7 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     repo.listTransactions(db, { from: `${addMonths(month, -3)}-01`, to: lastDayOfMonth(addMonths(month, -1)) }),
     repo.listAccounts(db),
   ]);
-  const salaryRows = await repo.listSalaryHistory(db);
+  const [salaryRows, transferRows] = await Promise.all([repo.listSalaryHistory(db), repo.listTransfers(db, month)]);
 
   const payslips: FinanceContext["payslips"] = payslipRows.map((p) => ({
     period: p.period,
@@ -243,6 +254,7 @@ export async function loadFromDb(db: Db, today: ISODate): Promise<FinanceContext
     billHistory,
     transactions: movements.filter((t) => !t.isIncome),
     movements,
+    transfers: transferRows.map((t) => ({ id: t.id, date: t.date, fromAccountId: t.fromAccountId, toAccountId: t.toAccountId, amountCents: t.amountCents, note: t.note })),
     salaryHistory: salaryRows.map((r) => ({ id: r.id, period: r.period!, date: r.date, amountCents: r.amountCents, accountName: r.accountName })),
     installments: inst.map((i) => ({
       month: monthOf(i.dueDate),
@@ -306,6 +318,7 @@ export function loadDemo(today: ISODate): FinanceContext {
     transactions: demoTx,
     movements: demoTx,
     salaryHistory: [],
+    transfers: [],
     installments: demo
       .demoInstallmentPlans(today)
       .flatMap(installmentPlan)

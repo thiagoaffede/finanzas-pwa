@@ -5,7 +5,7 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
   return (
     <input
       className={cn(
-        "h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20",
+        "h-10 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-sm text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20",
         className,
       )}
       {...props}
@@ -17,7 +17,7 @@ export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLS
   return (
     <select
       className={cn(
-        "h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20",
+        "h-10 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20",
         className,
       )}
       {...props}
@@ -31,7 +31,7 @@ export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLab
 
 export function Field({ label, hint, children, className }: { label: string; hint?: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={className}>
+    <div className={cn("min-w-0", className)}>
       <Label>{label}</Label>
       {children}
       {hint && <p className="mt-1 text-[11px] text-ink-3">{hint}</p>}

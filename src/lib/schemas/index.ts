@@ -122,3 +122,15 @@ export const dollarApiQuote = z.object({
   fechaActualizacion: z.string(),
 });
 export const dollarApiResponse = z.array(dollarApiQuote);
+
+/** Transferencia entre dos cuentas propias. */
+export const transferInput = z
+  .object({
+    date: isoDate,
+    fromAccountId: z.string().uuid(),
+    toAccountId: z.string().uuid(),
+    amountCents: cents.positive(),
+    note: z.string().trim().max(200).nullish(),
+  })
+  .refine((t) => t.fromAccountId !== t.toAccountId, { message: "Elegí dos cuentas distintas", path: ["toAccountId"] });
+export type TransferInput = z.infer<typeof transferInput>;

@@ -2,7 +2,8 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Pencil, Trash2 } from "lucide-react";
+import { TransferDialog } from "./transfer-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { MoneyInput } from "./money-input";
@@ -14,7 +15,7 @@ import { QuickExpense } from "./quick-expense";
 import { readQueue, type QueuedTransaction } from "@/lib/offline-queue";
 import { formatARS } from "@/lib/finance/money";
 import { send } from "@/lib/client-api";
-import type { TxView } from "@/lib/data/context";
+import type { TransferView, TxView } from "@/lib/data/context";
 
 const METHOD: Record<string, string> = { contado: "Efectivo", debito: "Débito", tarjeta: "Tarjeta", cuotas: "Cuotas", transferencia: "Transf." };
 const fmtDate = (d: string) => d.slice(8, 10) + "/" + d.slice(5, 7);
@@ -27,7 +28,9 @@ export function MovementsView({
   accounts = [],
   salary = null,
   nextPayday,
+  transfers = [],
 }: {
+  transfers?: TransferView[];
   transactions: TxView[];
   canSave: boolean;
   accounts?: Account[];
@@ -35,6 +38,7 @@ export function MovementsView({
   nextPayday?: string;
 }) {
   const [editing, setEditing] = useState<TxView | null>(null);
+  const [editingTransfer, setEditingTransfer] = useState<TransferView | null>(null);
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
   const router = useRouter();
   const [local, setLocal] = useState<QueuedTransaction[]>([]);
@@ -61,6 +65,11 @@ export function MovementsView({
     ...transactions.map((t) => ({ ...t, local: false })),
   ].sort((a, b) => b.date.localeCompare(a.date));
 
+  const items = [
+    ...rows.map((r) => ({ kind: "tx" as const, date: r.date, r })),
+    ...transfers.map((t) => ({ kind: "transfer" as const, date: t.date, t })),
+  ].sort((a, b) => b.date.localeCompare(a.date));
+
   const owed = rows.filter((r) => !r.isIncome && r.owedByName && r.owedCents > 0);
   const net = rows.reduce((s, r) => s + (r.isIncome ? r.amountCents : -r.amountCents), 0);
 
@@ -84,16 +93,42 @@ export function MovementsView({
         />
       </Suspense>
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className="min-w-0 lg:col-span-2">
           <CardHeader>
             <CardTitle>Movimientos del mes</CardTitle>
             <span className="num text-xs text-ink-3">Neto {formatARS(net)}</span>
           </CardHeader>
-          {rows.length === 0 ? (
+          {items.length === 0 ? (
             <p className="text-sm text-ink-3">Todavía no cargaste movimientos este mes.</p>
           ) : (
             <ul className="divide-y divide-border">
-              {rows.map((r) => (
+              {items.map((it) => {
+                if (it.kind === "transfer") {
+                  const t = it.t;
+                  return (
+                    <li key={`tr-${t.id}`}>
+                      <button
+                        type="button"
+                        disabled={!canSave}
+                        onClick={() => setEditingTransfer(t)}
+                        className="flex w-full items-center gap-3 py-2.5 text-left text-sm disabled:cursor-default"
+                      >
+                        <span className="num w-10 shrink-0 text-xs text-ink-3">{fmtDate(t.date)}</span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate">
+                            <ArrowRightLeft className="mr-1.5 inline h-3.5 w-3.5 align-[-2px] text-ink-3" />
+                            {accountName.get(t.fromAccountId) ?? "Cuenta"} → {accountName.get(t.toAccountId) ?? "Cuenta"}
+                          </p>
+                          <p className="text-[11px] text-ink-3">Transferencia{t.note ? ` · ${t.note}` : ""}</p>
+                        </div>
+                        <span className="num shrink-0 font-medium text-ink-2">{formatARS(t.amountCents)}</span>
+                        {canSave && <Pencil className="h-3.5 w-3.5 shrink-0 text-ink-3" aria-label="Editar" />}
+                      </button>
+                    </li>
+                  );
+                }
+                const r = it.r;
+                return (
                 <li key={r.id}>
                   <button
                     type="button"
@@ -118,7 +153,8 @@ export function MovementsView({
                     {canSave && !r.local && <Pencil className="h-3.5 w-3.5 shrink-0 text-ink-3" aria-label="Editar" />}
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </Card>
@@ -155,6 +191,7 @@ export function MovementsView({
           )}
         </Card>
       </div>
+      {editingTransfer && <TransferDialog accounts={accounts} transfer={editingTransfer} onClose={() => setEditingTransfer(null)} />}
       {editing && <TxEditor tx={editing} accounts={accounts} onClose={() => setEditing(null)} />}
     </div>
   );

@@ -29,6 +29,13 @@
       "when": 1795547006909,
       "tag": "0003_bills_recurring_salary",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795606827381,
+      "tag": "0004_transfers",
+      "breakpoints": true
     }
   ]
 }

@@ -40,6 +40,7 @@ export default async function MovimientosPage() {
       {ctx.demo && <DemoNotice />}
       <MovementsView
         transactions={ctx.movements}
+        transfers={ctx.transfers}
         canSave={!ctx.demo}
         accounts={accounts}
         salary={ctx.netIncomeCents > 0 ? pendingSalary(ctx) : null}

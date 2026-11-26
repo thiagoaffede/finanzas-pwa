@@ -29,6 +29,11 @@ export const BACKUP_TABLES = {
   goalContributions: s.goalContributions,
   marketQuotes: s.marketQuotes,
   settings: s.settings,
+  studyCourses: s.studyCourses,
+  studyBlocks: s.studyBlocks,
+  studyEvents: s.studyEvents,
+  studySessions: s.studySessions,
+  studyMistakes: s.studyMistakes,
 } as const satisfies Record<string, PgTable>;
 
 export type BackupTable = keyof typeof BACKUP_TABLES;

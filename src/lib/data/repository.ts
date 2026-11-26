@@ -10,6 +10,7 @@ import { splitCents } from "@/lib/finance/money";
 import { cardInstallmentDue } from "@/lib/finance/card";
 import type { IndicesSyncResult } from "@/lib/market/official-indices";
 import type { ScalesSyncResult } from "@/lib/market/faecys-sync";
+import type { MoodleSyncResult } from "@/lib/study/moodle-sync";
 
 /** Acceso a datos. Funciones chicas sobre Drizzle; la lógica de negocio vive en lib/finance. */
 
@@ -40,6 +41,10 @@ export interface AppSettings {
   indicesSync: IndicesSyncResult | null;
   /** Última revisión de la circular de escalas de FAECYS. */
   scalesSync: ScalesSyncResult | null;
+  /** Link privado de exportación del calendario de Moodle (iCal). No es la contraseña. */
+  moodleIcalUrl: string | null;
+  /** Última sincronización con ese calendario. */
+  moodleSync: MoodleSyncResult | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -58,6 +63,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastBackupAt: null,
   indicesSync: null,
   scalesSync: null,
+  moodleIcalUrl: null,
+  moodleSync: null,
 };
 
 export async function getSettings(db: Db): Promise<AppSettings> {

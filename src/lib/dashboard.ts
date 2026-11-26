@@ -16,6 +16,8 @@ import {
   salaryPayment,
   toISODate,
   lastDayOfMonth,
+  buildMoneyPlan,
+  isMultiCuota,
   type CashflowInput,
   type DueItem,
 } from "@/lib/finance";
@@ -188,6 +190,62 @@ export function buildCashflowInput(ctx: FinanceContext, months = 6): CashflowInp
         .filter(({ month, sac }) => sac && (month > ctx.month || ctx.today <= sac.date))
         .map(({ month, sac }) => ({ month, kind: "income" as const, direction: "in" as const, label: "Aguinaldo (SAC)", amountCents: sac!.amountCents })),
     ],
+  };
+}
+
+/** "Mi plan": reparto del sueldo, presupuesto sugerido, indicadores y tips con los números reales. */
+export function moneyPlan(ctx: FinanceContext) {
+  const spentByCategory: Record<string, number> = {};
+  for (const t of ctx.transactions) {
+    if (t.isIncome || t.billId || isMultiCuota(t)) continue;
+    spentByCategory[t.category] = (spentByCategory[t.category] ?? 0) + t.amountCents - t.owedCents;
+  }
+  const ars = ctx.accounts.filter((a) => (a.currency ?? "ARS") === "ARS" && a.kind !== "tarjeta");
+  const operating = ars.filter((a) => a.kind !== "reserva").reduce((s, a) => s + Math.max(0, a.balanceCents), 0);
+  const reserve = ars.filter((a) => a.kind === "reserva").reduce((s, a) => s + Math.max(0, a.balanceCents), 0);
+  const emergencyGoal = ctx.goals.find((g) => (g.currency ?? "ARS") === "ARS" && /emergencia/i.test(g.name)) ?? null;
+  const [, , dd] = ctx.today.split("-").map(Number);
+  return {
+    plan: buildMoneyPlan({
+      netIncomeCents: ctx.netIncomeCents,
+      split: ctx.settings.planSplit ?? undefined,
+      rentCents: currentRent(ctx),
+      servicesCents: latestBillsTotal(ctx),
+      cuotasCents: ctx.monthCuotas.reduce((s, c) => s + c.amountCents - c.owedCents, 0),
+      spentByCategory,
+      avgVariableCents: ctx.avgVariableSpendCents,
+      dayOfMonth: dd,
+      daysInMonth: daysInMonth(ctx.month),
+      operatingBalanceCents: ars.length ? operating : 0,
+      // La reserva y el objetivo suelen ser la misma plata: se toma el mayor para no contarla dos veces.
+      emergencySavedCents: Math.max(reserve, emergencyGoal?.savedCents ?? 0),
+      hasEmergencyGoal: Boolean(emergencyGoal),
+      // La última inflación mensual publicada por el INDEC; si no hay, la estimada de Configuración.
+      monthlyInflation: ctx.indices.ipc?.at(-1)?.rate ?? ctx.settings.monthlyInflation,
+      hasBudgets: Object.values(ctx.settings.budgets).some((v) => v > 0),
+    }),
+    emergencyGoal,
+    hasAccounts: ars.length > 0,
+  };
+}
+
+/**
+ * Aviso del día de cobro ("págate primero"): cuánto separar para ahorrar antes de gastar.
+ * Solo el día de pago de un sueldo de mes completo (el proporcional del primer mes no cuenta).
+ */
+export function paydayAlert(ctx: FinanceContext): { title: string; body: string; url: string; tag: string } | null {
+  if (ctx.netIncomeCents <= 0) return null;
+  const pay = salaryPayment(ctx.month, payrollInput(ctx));
+  if (pay.date !== ctx.today || pay.amountCents <= 0 || pay.days < 30 || salaryReceived(ctx, pay.accrualMonth)) return null;
+  const { plan } = moneyPlan(ctx);
+  const save = plan.blocks.find((b) => b.key === "savings")?.plannedCents ?? 0;
+  if (save <= 0) return null;
+  const ars = `$${Math.round(save / 100).toLocaleString("es-AR")}`;
+  return {
+    title: "Hoy cobrás",
+    body: `Separá ${ars} para ahorrar antes de gastar (el ${Math.round(plan.split.savings * 100)} % de tu sueldo).`,
+    url: "/plan",
+    tag: `payday-${ctx.month}`,
   };
 }
 

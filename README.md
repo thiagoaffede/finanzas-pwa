@@ -56,6 +56,7 @@ Se instala en el celu y en la compu como una app (PWA) y funciona sin conexión.
 - **Alquiler**: el próximo aumento por ICL, IPC o porcentaje fijo, según el contrato. El ICL (BCRA) y el IPC (INDEC) se actualizan solos todos los días desde las fuentes oficiales.
 
 ### 🎯 Planificación y ahorro
+- **Mi plan**: el sueldo repartido 55/25/20 (necesarios, libres, ahorro) con tus números, presupuesto sugerido por categoría que se aplica con un toque, semáforo de alquiler, cuotas, ahorro y fondo de emergencia, tips según cómo viene tu mes y un aviso el día de cobro para separar el ahorro primero.
 - **Objetivos** en pesos o en dólares, con aporte mensual y fecha meta.
 - **Ahorro total** con los dólares valuados al tipo de cambio del día (MEP, oficial, blue, cripto o CCL), o a uno cargado a mano.
 - **Flujo de caja a 6 meses**, que marca los meses ajustados.

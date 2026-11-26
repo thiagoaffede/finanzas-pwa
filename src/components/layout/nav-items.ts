@@ -1,4 +1,4 @@
-import { GraduationCap, BarChart3, DatabaseBackup, LayoutDashboard, ListOrdered, Briefcase, Target, Calculator, Settings, PiggyBank, MoreHorizontal, type LucideIcon } from "lucide-react";
+import { Compass, GraduationCap, BarChart3, DatabaseBackup, LayoutDashboard, ListOrdered, Briefcase, Target, Calculator, Settings, PiggyBank, MoreHorizontal, type LucideIcon } from "lucide-react";
 
 export interface NavItem {
   href: string;
@@ -16,6 +16,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/movimientos", label: "Movimientos y servicios", short: "Movim.", icon: ListOrdered, bottom: true },
   { href: "/presupuesto", label: "Presupuesto y vencimientos", short: "Presup.", icon: PiggyBank, bottom: true },
   { href: "/planificacion", label: "Objetivos y planificación", short: "Planes", icon: Target, bottom: true },
+  { href: "/plan", label: "Mi plan", short: "Plan", icon: Compass, hint: "Cuánto ahorrar, presupuesto sugerido y cómo venís" },
   { href: "/estudio", label: "Estudio", short: "Estudio", icon: GraduationCap, hint: "Tus ATI: temas, ritmo hasta el examen, fechas y pomodoro" },
   { href: "/reporte", label: "Reporte mensual", short: "Reporte", icon: BarChart3, hint: "Ingresos, gastos e inflación: cuánto te rinde la plata" },
   { href: "/sueldo-alquiler", label: "Sueldo y alquiler", short: "Sueldo", icon: Briefcase, hint: "Recibos, historial de sueldos y ajuste del alquiler" },

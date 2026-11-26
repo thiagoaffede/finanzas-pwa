@@ -5,7 +5,8 @@
 **Tus finanzas personales, en pesos argentinos y con la inflación en cuenta.**
 
 Cuánto podés gastar hoy, qué vence esta semana, cuánto te queda de cada presupuesto,
-qué cuotas pagás en los próximos meses y si tu sueldo le gana a la inflación.
+qué cuotas pagás en los próximos meses, cuánto separar para ahorrar y si tu sueldo le gana a la inflación.
+Los índices (IPC, ICL) y las escalas de Comercio se actualizan solos desde las fuentes oficiales.
 Se instala en el celu y en la compu como una app (PWA) y funciona sin conexión.
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
@@ -32,6 +33,13 @@ Se instala en el celu y en la compu como una app (PWA) y funciona sin conexión.
 
 <p align="center"><sub>Inicio · Presupuesto · Reporte mensual · Ahorro en dólares</sub></p>
 
+<p align="center">
+  <img src="https://cdn.jsdelivr.net/gh/thiagoaffede/finanzas-pwa@main/docs/capturas/mi-plan.png" alt="Mi plan: cuánto separar el día de cobro" width="200" />
+  <img src="https://cdn.jsdelivr.net/gh/thiagoaffede/finanzas-pwa@main/docs/capturas/estudio.png" alt="Estudio: ritmo hasta el examen" width="200" />
+</p>
+
+<p align="center"><sub>Mi plan · Estudio</sub></p>
+
 ## Qué hace
 
 ### 📊 Día a día
@@ -50,13 +58,23 @@ Se instala en el celu y en la compu como una app (PWA) y funciona sin conexión.
 - **Avisos push** de cada vencimiento con los días de anticipación que elijas, a las 8 de la mañana.
 
 ### 💼 Sueldo y alquiler
-- **Estimador de sueldo** del convenio de Empleados de Comercio (CCT 130/75): antigüedad, presentismo, aportes y aguinaldo proporcional. Las escalas se cargan solas desde la circular que publica FAECYS después de cada paritaria.
+- **Estimador de sueldo** del convenio de Empleados de Comercio (CCT 130/75): antigüedad, presentismo, aportes y aguinaldo proporcional.
+- **Escalas de Comercio automáticas**: se bajan solas de la circular que publica FAECYS después de cada paritaria, con todas las categorías y los meses del acuerdo, incluida la suma por única vez (que no suma antigüedad ni presentismo). En Configuración se ve qué circular está cargada y se puede actualizar a mano.
 - **"Es mi sueldo"**: al cargar el cobro se precarga el estimado, y se guarda un historial de sueldos.
 - **Recibos de sueldo** leídos desde el PDF, con el detalle línea por línea.
-- **Alquiler**: el próximo aumento por ICL, IPC o porcentaje fijo, según el contrato. El ICL (BCRA) y el IPC (INDEC) se actualizan solos todos los días desde las fuentes oficiales.
+- **Alquiler**: el próximo aumento por ICL, IPC o porcentaje fijo, según el contrato.
+- **Índices oficiales sin cargar nada**: el IPC mensual del INDEC (API de Series de Tiempo) y el ICL diario del BCRA se actualizan solos todos los días. El reporte y el ajuste del alquiler usan esos valores; también se pueden cargar a mano.
+
+### 🧭 Mi plan
+- **Reparto del sueldo 55 / 25 / 20**: necesarios (alquiler, servicios, cuotas, comida, transporte), gastos libres y ahorro, calculado sobre tu neto real. Los porcentajes se pueden cambiar.
+- **"Separá $X el día que cobrás"**: el ahorro va primero. Ese día llega un aviso al celu con el monto, y el inicio lo muestra junto al próximo cobro.
+- **Cómo venís este mes**: cada bloque con lo gastado contra lo planeado, y el ahorro proyectado a fin de mes con tu ritmo de gasto (a principio de mes usa el promedio de los meses anteriores).
+- **Presupuesto sugerido por categoría**, ya descontados los fijos, que se aplica con un toque. Si el alquiler no entra, el faltante sale de los gastos libres y no del ahorro ni de la comida.
+- **Semáforo**: peso del alquiler, de las cuotas, ahorro proyectado y meses de fondo de emergencia.
+- **Fondo de emergencia**: meta de 3 meses de gastos necesarios (ideal 6), cuánto falta y un botón para crearlo como objetivo.
+- **Tips según tu mes**: si te estás pasando, si tenés cuotas de más o si hay plata quieta en la cuenta perdiendo contra la inflación.
 
 ### 🎯 Planificación y ahorro
-- **Mi plan**: el sueldo repartido 55/25/20 (necesarios, libres, ahorro) con tus números, presupuesto sugerido por categoría que se aplica con un toque, semáforo de alquiler, cuotas, ahorro y fondo de emergencia, tips según cómo viene tu mes y un aviso el día de cobro para separar el ahorro primero.
 - **Objetivos** en pesos o en dólares, con aporte mensual y fecha meta.
 - **Ahorro total** con los dólares valuados al tipo de cambio del día (MEP, oficial, blue, cripto o CCL), o a uno cargado a mano.
 - **Flujo de caja a 6 meses**, que marca los meses ajustados.
@@ -96,7 +114,19 @@ Se instala en el celu y en la compu como una app (PWA) y funciona sin conexión.
 | **Excel** | SpreadsheetML generado a mano y comprimido con [fflate](https://github.com/101arrowz/fflate), sin dependencias pesadas |
 | **Tests** | [Vitest](https://vitest.dev) con [PGlite](https://pglite.dev) (Postgres en memoria con las mismas migraciones) |
 | **Índices y escalas** | IPC de la [API de Series de Tiempo](https://datos.gob.ar/series) (INDEC), ICL de la [API del BCRA](https://www.bcra.gob.ar/BCRAyVos/catalogo-de-APIs-banco-central.asp) y escalas de Comercio desde las circulares de [FAECYS](https://www.faecys.org.ar) |
-| **Deploy** | [Vercel](https://vercel.com), con un cron diario para índices, escalas y avisos |
+| **Estudio** | Calendario de Moodle leído desde su link iCal, sin guardar la contraseña |
+| **Deploy** | [Vercel](https://vercel.com), con un cron diario para índices, escalas, Moodle y avisos |
+
+## Lo que hace sola todos los días
+
+Un cron de Vercel llama a `/api/cron/due-alerts` a las 8 de la mañana (hora argentina) y, en orden:
+
+1. Actualiza el **IPC** (INDEC) y el **ICL** (BCRA).
+2. Busca una **circular nueva de FAECYS** y, si la hay, carga las escalas.
+3. Sincroniza el **calendario de Moodle**, si cargaste el link.
+4. Manda los avisos push: **fechas de estudio**, **presupuesto** al 80 % o pasado, **día de cobro** y **vencimientos**.
+
+Si el cron no corrió (por ejemplo, en local), al abrir Configuración o Sueldo y alquiler la app actualiza índices y escalas con más de 20 horas en segundo plano.
 
 ## Probarla en tu compu
 
@@ -153,7 +183,7 @@ Para usarla en serio, conectá una base (abajo).
 | `AUTH_SECRET` | recomendada | Texto largo al azar para firmar la sesión. Cambiarlo cierra todas las sesiones. |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | para avisos | Claves de Web Push: `npx web-push generate-vapid-keys`. |
 | `VAPID_SUBJECT` | para avisos | Tu mail (`mailto:...`) o la URL `https://` de la app. Apple rechaza dominios inventados. |
-| `CRON_SECRET` | recomendada | Protege el cron diario de `vercel.json` (`/api/cron/due-alerts`, 8 a. m. hora argentina), que actualiza índices y escalas y manda los avisos. |
+| `CRON_SECRET` | recomendada | Protege el cron diario de `vercel.json` (`/api/cron/due-alerts`, 8 a. m. hora argentina). Sin ella el cron no corre: ni índices, ni escalas, ni Moodle, ni avisos. |
 | `ANTHROPIC_API_KEY` | opcional, paga | Lectura con IA de fotos de boletas y recibos. Sin ella, los PDF digitales se leen gratis. |
 | `EXTRACTION_MODEL` | opcional | Modelo para esa lectura. |
 | `DOLLAR_API_URL`, `DOLLAR_CACHE_MINUTES` | opcional | De dónde se toman las cotizaciones del dólar y cada cuánto se refrescan. |
@@ -165,19 +195,20 @@ Todas están documentadas, sin valores, en [`.env.example`](.env.example).
 
 ```
 src/
-├── app/(app)/          Pantallas: inicio, movimientos, presupuesto, planificación, reporte,
-│                       sueldo y alquiler, calculadoras, backup, configuración
-├── app/api/            API REST (todas detrás del login), cron de avisos, export y backup
+├── app/(app)/          Pantallas: inicio, movimientos, presupuesto, planificación, mi plan,
+│                       estudio, reporte, sueldo y alquiler, calculadoras, backup, configuración
+├── app/api/            API REST (todas detrás del login), cron diario, export y backup
 ├── proxy.ts            Pide sesión en páginas y API
 ├── components/         ui/ (base), forms/, charts/, dashboard/, layout/
 └── lib/
     ├── finance/        Lógica pura y testeada: cuánto gastar, sueldo, alquiler, cuotas,
-    │                   presupuesto, flujo de caja, reporte con inflación
+    │                   presupuesto, flujo de caja, reporte con inflación, mi plan (money-plan.ts)
     ├── data/           Repositorio (consultas Drizzle) y el contexto que alimenta las pantallas
     ├── db/             Esquema y conexión (Neon HTTP en producción, pg en local)
-    ├── parsers/        Lectura de boletas y recibos desde el texto del PDF
+    ├── parsers/        Lectura de boletas, recibos y circulares de escalas de FAECYS
     ├── extraction/     Lectura opcional con IA
-    ├── market/         Cotización del dólar con caché
+    ├── market/         Dólar con caché, IPC/ICL oficiales y sincronización de escalas FAECYS
+    ├── study/          Estudio: ritmo, plantillas ATI, avisos y lectura del iCal de Moodle
     ├── backup.ts       Backup y restauración
     └── xlsx.ts         Generador de Excel
 drizzle/                Migraciones SQL (se aplican en cada deploy)
@@ -189,6 +220,7 @@ Decisiones de fondo:
 - **Plata en centavos enteros** y fechas `YYYY-MM-DD`: nada de redondeos con decimales.
 - **La lógica financiera es pura** (sin base ni red) y está cubierta por tests. Las pantallas solo arman datos y muestran.
 - **Escalas e índices se actualizan solos**: escalas de Comercio desde las circulares de FAECYS, IPC del INDEC e ICL del BCRA. Ver [`docs/domain-rules.md`](docs/domain-rules.md).
+- **Mi plan no guarda números aparte**: se calcula en cada visita con tus movimientos, cuentas y presupuesto; lo único que se guarda son los porcentajes si los cambiás.
 
 ## Seguridad
 

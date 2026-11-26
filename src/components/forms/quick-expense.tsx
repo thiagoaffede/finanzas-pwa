@@ -13,7 +13,7 @@ import { formatARS, todayAR } from "@/lib/finance";
 import { dateLabel, monthLabel } from "@/lib/labels";
 import type { PaymentMethod } from "@/types/finance";
 
-export const CATEGORIES = ["Comida", "Hogar", "Traslados", "Salud", "Deporte", "Salidas", "Ropa", "Servicios", "Suscripciones", "Educación", "Regalos", "Otros"];
+export const CATEGORIES = ["Comida", "Hogar", "Traslados", "Salud", "Deporte", "Salidas", "Ropa", "Servicios", "Suscripciones", "Educación", "Facultad", "Regalos", "Otros"];
 
 export const FREQUENCIES: { months: number; label: string }[] = [
   { months: 1, label: "Todos los meses" },

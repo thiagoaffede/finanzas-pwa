@@ -64,6 +64,13 @@
       "when": 1795628885612,
       "tag": "0008_scale_one_time_sum",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795653988929,
+      "tag": "0009_study",
+      "breakpoints": true
     }
   ]
 }

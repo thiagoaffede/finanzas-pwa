@@ -313,3 +313,104 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
   userAgent: text("user_agent"),
   ...timestamps,
 });
+
+// ─── Estudio (cursos ATI de la UNS y, más adelante, materias) ───────────────
+/** Un curso: un ATI (bloques + autoevaluaciones + examen) o una materia. */
+export const studyCourses = pgTable("study_courses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  /** "ati" o "materia". */
+  kind: text("kind").notNull().default("ati"),
+  /** "cursando", "aprobado" o "pausado". */
+  status: text("status").notNull().default("cursando"),
+  /** Cómo aparece el curso en el calendario de Moodle (para asociar las fechas que se importan). */
+  moodleName: text("moodle_name"),
+  /** Días antes del examen que se reservan para repasar (no se planifican bloques). */
+  reviewDays: integer("review_days").notNull().default(3),
+  notes: text("notes"),
+  archived: boolean("archived").notNull().default(false),
+  ...timestamps,
+});
+
+/** Bloques temáticos de un curso; cada uno cierra con su autoevaluación. */
+export const studyBlocks = pgTable(
+  "study_blocks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    courseId: uuid("course_id")
+      .notNull()
+      .references(() => studyCourses.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    name: text("name").notNull(),
+    /** Agrupa temas dentro de un bloque grande ("Bloque 1 · Aritmética"). */
+    groupName: text("group_name"),
+    /** Detalle corto: páginas, test asociado, qué hay que poder hacer. */
+    detail: text("detail"),
+    /** Nivel de dominio: 0 sin empezar, 1 leído, 2 con el material, 3 a ciegas, 4 explicado en voz alta. */
+    level: integer("level").notNull().default(0),
+    /** "pendiente", "en_curso" o "aprobado" (autoevaluación o test aprobado). */
+    status: text("status").notNull().default("pendiente"),
+    /** Fecha en la que te proponés tenerlo aprobado. */
+    targetDate: date("target_date"),
+    completedOn: date("completed_on"),
+    ...timestamps,
+  },
+  (t) => [index("study_blocks_course_idx").on(t.courseId, t.position)],
+);
+
+/** Fechas: examen presencial, consultas, autoevaluaciones, entregas. Manuales o importadas de Moodle. */
+export const studyEvents = pgTable(
+  "study_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    courseId: uuid("course_id").references(() => studyCourses.id, { onDelete: "set null" }),
+    /** "examen", "consulta", "autoevaluacion", "entrega" u "otro". */
+    kind: text("kind").notNull().default("otro"),
+    title: text("title").notNull(),
+    date: date("date").notNull(),
+    /** Último día, si dura varios días (inclusive). */
+    endDate: date("end_date"),
+    /** Hora local "HH:MM" (opcional). */
+    time: text("time"),
+    place: text("place"),
+    link: text("link"),
+    notes: text("notes"),
+    /** Exámenes: "aprobado", "desaprobado" o "ausente". */
+    result: text("result"),
+    /** "manual" o "moodle". */
+    source: text("source").notNull().default("manual"),
+    /** UID del evento en el calendario de Moodle (para no duplicar al sincronizar). */
+    externalUid: text("external_uid"),
+    /** Nombre del curso tal como vino de Moodle. */
+    externalCourse: text("external_course"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("study_events_external_uid_idx").on(t.externalUid), index("study_events_date_idx").on(t.date)],
+);
+
+/** Tiempo de estudio (pomodoros o cargado a mano). */
+export const studySessions = pgTable(
+  "study_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    courseId: uuid("course_id").references(() => studyCourses.id, { onDelete: "set null" }),
+    date: date("date").notNull(),
+    minutes: integer("minutes").notNull(),
+    /** "pomodoro" o "manual". */
+    source: text("source").notNull().default("pomodoro"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("study_sessions_date_idx").on(t.date)],
+);
+
+/** Planilla de errores: cada ejercicio que salió mal y por qué. Se marca cuando se rehízo a ciegas. */
+export const studyMistakes = pgTable("study_mistakes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  courseId: uuid("course_id").references(() => studyCourses.id, { onDelete: "cascade" }),
+  blockId: uuid("block_id").references(() => studyBlocks.id, { onDelete: "set null" }),
+  date: date("date").notNull(),
+  description: text("description").notNull(),
+  fixed: boolean("fixed").notNull().default(false),
+  ...timestamps,
+});

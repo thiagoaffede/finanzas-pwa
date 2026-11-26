@@ -61,6 +61,16 @@ Se instala en el celu y en la compu como una app (PWA) y funciona sin conexión.
 - **Flujo de caja a 6 meses**, que marca los meses ajustados.
 - **Simulador de escenarios**, **contado vs. cuotas** con inflación, e **historial de precios**.
 
+### 🎓 Estudio (ATI de la UNS)
+
+- **Tus cursos con un botón:** los ATI de Matemática (20 temas del cuadernillo) y Análisis y Comprensión de Problemas (15 bloques con sus Tests de Seguimiento), con las fechas objetivo del plan de estudio y el calendario ATI (tutorías, inscripción, exámenes). También se pueden crear cursos a mano.
+- **Ritmo hasta el examen:** cuántos temas quedan, cuántos días y cada cuánto hay que cerrar uno. Marca lo atrasado y reparte fechas parejas dejando días de repaso.
+- **4 niveles de dominio por tema** (leído, con el material, a ciegas, lo explico) y la lista de temas flojos para la última semana.
+- **Fechas con avisos al celular:** examen (7, 3 y 1 día antes), trámites, consultas y temas que vencen hoy. Resultado del examen y nueva fecha si no salió.
+- **Calendario de Moodle sin contraseña:** se pega el link privado de *Exportar calendario* (iCal) y se sincroniza todos los días. También se puede subir un `.ics`.
+- **Pomodoro** que suma minutos por curso, racha de días y gráfico de las últimas dos semanas.
+- **Planilla de errores** para rehacer a ciegas, y **gastos de facultad** (categoría *Facultad*).
+
 ### 📈 Reporte mensual
 - Ingresos, gastos y ahorro del mes, comparados con el mes anterior en pesos y descontada la inflación.
 - **Poder adquisitivo**: cada mes llevado a pesos de hoy, para ver si la plata te rinde más o menos.

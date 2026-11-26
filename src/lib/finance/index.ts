@@ -14,3 +14,4 @@ export * from "./payroll-calendar";
 export * from "./budget";
 export * from "./card";
 export * from "./report";
+export * from "./money-plan";

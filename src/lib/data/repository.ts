@@ -10,6 +10,7 @@ import { splitCents } from "@/lib/finance/money";
 import { cardInstallmentDue } from "@/lib/finance/card";
 import type { IndicesSyncResult } from "@/lib/market/official-indices";
 import type { ScalesSyncResult } from "@/lib/market/faecys-sync";
+import type { PlanSplit } from "@/lib/finance/money-plan";
 import type { MoodleSyncResult } from "@/lib/study/moodle-sync";
 
 /** Acceso a datos. Funciones chicas sobre Drizzle; la lógica de negocio vive en lib/finance. */
@@ -45,6 +46,8 @@ export interface AppSettings {
   moodleIcalUrl: string | null;
   /** Última sincronización con ese calendario. */
   moodleSync: MoodleSyncResult | null;
+  /** Reparto del sueldo entre gastos necesarios, libres y ahorro (null = 55/25/20). */
+  planSplit: PlanSplit | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -63,6 +66,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastBackupAt: null,
   indicesSync: null,
   scalesSync: null,
+  planSplit: null,
   moodleIcalUrl: null,
   moodleSync: null,
 };

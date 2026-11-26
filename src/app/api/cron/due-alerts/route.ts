@@ -1,7 +1,7 @@
 import { json } from "@/lib/api";
 import { getDb, hasDatabase } from "@/lib/db";
 import { loadFromDb } from "@/lib/data/context";
-import { dueItems } from "@/lib/dashboard";
+import { dueItems, paydayAlert } from "@/lib/dashboard";
 import { buildDueAlert } from "@/lib/alerts";
 import { checkBudgetAlerts } from "@/lib/budget-alerts";
 import { pushConfigured, sendToAll } from "@/lib/push";
@@ -54,7 +54,9 @@ export async function GET(req: Request) {
 
   const ctx = await loadFromDb(db, today);
   const budget = await checkBudgetAlerts(db, ctx.today).catch((e) => ({ error: String(e) }));
+  const payAlert = paydayAlert(ctx);
+  const payday = payAlert ? { alert: payAlert.title, ...(await sendToAll(db, payAlert)) } : "no es día de cobro";
   const alert = buildDueAlert(dueItems(ctx), ctx.today, ctx.settings.reminderDays);
-  if (!alert) return json({ sent: 0, reason: "nada que avisar", budget, indices, scales, moodle, study });
-  return json({ alert: alert.title, ...(await sendToAll(db, alert)), budget, indices, scales, moodle, study });
+  if (!alert) return json({ sent: 0, reason: "nada que avisar", budget, payday, indices, scales, moodle, study });
+  return json({ alert: alert.title, ...(await sendToAll(db, alert)), budget, payday, indices, scales, moodle, study });
 }

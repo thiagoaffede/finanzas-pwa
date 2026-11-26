@@ -19,7 +19,7 @@ import { Progress } from "@/components/ui/progress";
 import { Stat } from "@/components/ui/stat";
 import { CashflowChart } from "@/components/charts/cashflow-chart";
 import { DemoNotice } from "@/components/dashboard/demo-notice";
-import { buildDashboard } from "@/lib/dashboard";
+import { buildDashboard, moneyPlan } from "@/lib/dashboard";
 import { loadFinanceContext } from "@/lib/data/context";
 import { SetupNotice } from "@/components/dashboard/setup-notice";
 import { diffDays, formatARS, formatPct, todayAR } from "@/lib/finance";
@@ -57,6 +57,9 @@ const INCOME_HINT = {
 export default async function DashboardPage() {
   const ctx = await loadFinanceContext(todayAR());
   const d = buildDashboard(ctx);
+  const plan = ctx.netIncomeCents > 0 ? moneyPlan(ctx).plan : null;
+  const planTip = plan?.tips.find((t) => t.tone !== "good") ?? null;
+  const toSave = plan?.blocks.find((b) => b.key === "savings")?.plannedCents ?? 0;
   const lastBackup = ctx.settings.lastBackupAt?.slice(0, 10) ?? null;
   const backupDue = !ctx.demo && ctx.movements.length > 0 && (!lastBackup || diffDays(lastBackup, ctx.today) > 30);
   const s = d.safe;
@@ -160,6 +163,12 @@ export default async function DashboardPage() {
                 {formatARS(d.nextIncome.salary.amountCents)}
               </span>{" "}
               el {dateLabel(d.nextIncome.salary.date)}
+              {toSave > 0 && !d.nextIncome.prorated && (
+                <>
+                  {" "}
+                  · <Link href="/plan" className="text-accent underline-offset-2 hover:underline">separá {formatARS(toSave)} para ahorrar</Link>
+                </>
+              )}
               {d.nextIncome.prorated &&
                 ` (sueldo de ${monthLabel(d.nextIncome.salary.accrualMonth)}, ${d.nextIncome.salary.days} días trabajados)`}
               {d.nextIncome.sac && (
@@ -210,6 +219,14 @@ export default async function DashboardPage() {
                   </Link>
                 </li>
               ))}
+            {planTip && (
+              <li className={`rounded-xl p-3 ${planTip.tone === "bad" ? "bg-bad-soft text-bad" : "bg-warn-soft text-warn"}`}>
+                <Link href="/plan" className="block">
+                  <p className="font-medium">{planTip.title}</p>
+                  <p className="text-xs opacity-90">{planTip.text}</p>
+                </Link>
+              </li>
+            )}
             {d.nextRent && (
               <li className="rounded-xl bg-surface-muted p-3">
                 <p className="flex items-center gap-2 font-medium">
